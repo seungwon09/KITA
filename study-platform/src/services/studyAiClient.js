@@ -29,21 +29,48 @@ function formatNumber(value) {
     return String(Number(value.toFixed(4)));
 }
 
+function compactRemoteError(status, data, fallback = 'Study AI request failed') {
+    if ([502, 503, 504].includes(Number(status))) {
+        return 'Study AI 서버가 잠깐 불안정합니다. 사진을 자동 압축해서 다시 시도하거나 잠시 후 다시 실행해 주세요.';
+    }
+    const raw = String(data?.detail || data?.message || data?.raw || fallback || '');
+    const withoutHtml = raw
+        .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    const detail = withoutHtml || fallback;
+    return `Study AI ${status}: ${detail.slice(0, 240)}`;
+}
+
+function compactNetworkError(error) {
+    if (error?.name === 'AbortError') {
+        return 'Study AI 서버 응답이 늦습니다. 사진을 조금 작게 찍거나 잠시 후 다시 실행해 주세요.';
+    }
+    return 'Study AI 서버 연결이 잠깐 불안정합니다. 다시 실행해 주세요.';
+}
+
 async function requestJson(path, options = {}) {
     const timeoutMs = options.timeoutMs || 45000;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-        const response = await fetch(`${STUDY_AI_BASE_URL}${path}`, {
-            method: options.method || 'GET',
-            headers: {
-                'Content-Type': 'application/json; charset=utf-8',
-                ...(options.headers || {})
-            },
-            body: options.body ? JSON.stringify(options.body) : undefined,
-            signal: controller.signal
-        });
+        let response;
+        try {
+            response = await fetch(`${STUDY_AI_BASE_URL}${path}`, {
+                method: options.method || 'GET',
+                headers: {
+                    'Content-Type': 'application/json; charset=utf-8',
+                    ...(options.headers || {})
+                },
+                body: options.body ? JSON.stringify(options.body) : undefined,
+                signal: controller.signal
+            });
+        } catch (err) {
+            throw new Error(compactNetworkError(err));
+        }
 
         const text = await response.text();
         let data = null;
@@ -54,8 +81,7 @@ async function requestJson(path, options = {}) {
         }
 
         if (!response.ok) {
-            const detail = data?.detail || data?.message || data?.raw || response.statusText;
-            throw new Error(`Study AI ${response.status}: ${detail}`);
+            throw new Error(compactRemoteError(response.status, data, response.statusText));
         }
         return data;
     } finally {
@@ -73,11 +99,16 @@ async function requestMultipart(path, formData, options = {}) {
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-        const response = await fetch(`${STUDY_AI_BASE_URL}${path}`, {
-            method: options.method || 'POST',
-            body: formData,
-            signal: controller.signal
-        });
+        let response;
+        try {
+            response = await fetch(`${STUDY_AI_BASE_URL}${path}`, {
+                method: options.method || 'POST',
+                body: formData,
+                signal: controller.signal
+            });
+        } catch (err) {
+            throw new Error(compactNetworkError(err));
+        }
 
         const text = await response.text();
         let data = null;
@@ -88,8 +119,7 @@ async function requestMultipart(path, formData, options = {}) {
         }
 
         if (!response.ok) {
-            const detail = data?.detail || data?.message || data?.raw || response.statusText;
-            throw new Error(`Study AI ${response.status}: ${detail}`);
+            throw new Error(compactRemoteError(response.status, data, response.statusText));
         }
         return data;
     } finally {
@@ -104,6 +134,32 @@ async function checkStudyAiHealth() {
     } catch (err) {
         return { ok: false, baseUrl: STUDY_AI_BASE_URL, error: err.message };
     }
+}
+
+function inferLinearEquation(problemText) {
+    const text = compactText(problemText)
+        .replace(/[−–—]/g, '-')
+        .replace(/²/g, '^2')
+        .replace(/\s+/g, '');
+    if (/x\^2|y=|f\(x\)/i.test(text)) return null;
+    const match = text.match(/^([+-]?(?:\d+(?:\.\d+)?)?)x([+-]\d+(?:\.\d+)?)?=([+-]?\d+(?:\.\d+)?)$/i);
+    if (!match) return null;
+    const a = numericCoefficient(match[1], 1);
+    const b = Number(match[2] || 0);
+    const c = Number(match[3]);
+    if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isFinite(c) || a === 0) return null;
+    const x = (c - b) / a;
+    const answer = `x=${formatNumber(x)}`;
+    const stepOne = b === 0 ? `${formatNumber(a)}x=${formatNumber(c)}` : `${formatNumber(a)}x=${formatNumber(c - b)}`;
+    return {
+        answer,
+        basic: [
+            `${text}에서 상수항을 오른쪽으로 옮깁니다.`,
+            `${stepOne}이므로 양변을 ${formatNumber(a)}로 나눕니다.`,
+            `따라서 ${answer}입니다.`
+        ].join('\n'),
+        fast: `${stepOne}, 그래서 ${answer}.`
+    };
 }
 
 function inferQuadraticExtreme(problemText) {
@@ -142,6 +198,30 @@ function inferQuadraticExtreme(problemText) {
 }
 
 function localFallbackSolve(problemText, subject = 'auto', error = null) {
+    const linear = inferLinearEquation(problemText);
+    if (linear) {
+        return {
+            ok: true,
+            provider: 'kita-local-fallback',
+            baseUrl: STUDY_AI_BASE_URL,
+            verifiedAnswer: linear.answer,
+            solution: linear.basic,
+            shortcut: linear.fast,
+            concept: '일차방정식은 x항과 상수항을 나눈 뒤 양변을 계수로 나누면 됩니다.',
+            basicSolution: linear.basic,
+            fastSolution: linear.fast,
+            eliteSolution: linear.fast,
+            similarProblem: '4x-5=19를 풀어보시오.',
+            tutorHint: 'x가 들어간 항은 왼쪽, 숫자만 있는 항은 오른쪽으로 모아 보세요.',
+            recommendedNextAction: '일차방정식 3문제를 더 풀어 계산 속도를 올리세요.',
+            traps: ['상수항을 넘길 때 부호 실수', '마지막에 x의 계수로 나누지 않는 실수'],
+            recommendedDrills: ['일차방정식 정리', '부호 바꾸기', '대입 검산'],
+            timeTargetSeconds: 20,
+            confidence: 0.88,
+            analysis: { detected_subject: subject, problem_type: '일차방정식', detected_unit: '방정식' },
+            warnings: error ? [error.message] : []
+        };
+    }
     const inferred = inferQuadraticExtreme(problemText);
     if (inferred) {
         return {

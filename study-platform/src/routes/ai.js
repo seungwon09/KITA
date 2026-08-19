@@ -20,6 +20,14 @@ const subject = req => ['math', 'science', 'mixed', 'auto'].includes(req.body?.s
 const fmt = value => Number.isInteger(value) ? String(value) : String(Number(value.toFixed(4)));
 const studyAiPlan = planId => ({ free: 'free', middle: 'basic', advanced: 'pro', ultimate: 'premium' }[planId] || 'free');
 
+function appendUploadedImage(form, file) {
+    form.append(
+        'image',
+        new Blob([file.buffer], { type: file.mimetype || 'application/octet-stream' }),
+        file.originalname || 'problem.png'
+    );
+}
+
 function limit(type) {
     return async (req, res, next) => {
         const access = await consume(req, type);
@@ -125,19 +133,51 @@ router.post('/graph-image', limit('ocr'), upload.single('image'), async (req, re
     if (!req.file) return res.status(400).json({ ok: false, error: '이미지 파일이 없습니다.' });
     try {
         const form = new FormData();
-        form.append('image', new Blob([req.file.buffer], { type: req.file.mimetype || 'application/octet-stream' }), req.file.originalname || 'problem.png');
+        appendUploadedImage(form, req.file);
         form.append('user_id', req.user?.email || clean(req.body?.user_id || 'kita-user', 120));
         form.append('subject', subject(req));
         form.append('plan', studyAiPlan(req.kitaAccess?.plan?.id));
         form.append('student_level', clean(req.body?.student_level || 'intermediate', 80));
         form.append('elapsed_seconds', String(Number(req.body?.solveTime || req.body?.elapsed_seconds || 0) || 0));
         form.append('auto_solve', 'true');
-        const bundle = await requestMultipart('/app-ai/mobile/ocr-analyze', form, { timeoutMs: 90000 });
+        let bundle = null;
+        let fallbackWarning = '';
+        try {
+            bundle = await requestMultipart('/app-ai/mobile/ocr-analyze', form, { timeoutMs: 90000 });
+        } catch (err) {
+            fallbackWarning = err.message;
+            const ocrForm = new FormData();
+            appendUploadedImage(ocrForm, req.file);
+            const ocrOnly = await requestMultipart('/ocr', ocrForm, { timeoutMs: 70000 });
+            const ocrText = clean(ocrOnly.normalized_text || ocrOnly.extracted_text || ocrOnly.text, 6000);
+            const solved = ocrText ? await solveWithStudyAi({
+                question: ocrText,
+                subject: subject(req),
+                userId: req.user?.email || 'kita-user',
+                elapsedSeconds: Number(req.body?.solveTime || req.body?.elapsed_seconds || 0)
+            }) : null;
+            bundle = {
+                ocr: ocrOnly,
+                analyze: solved ? {
+                    solve: {
+                        verified_answer: solved.verifiedAnswer || '',
+                        basic_solution: solved.basicSolution || solved.solution || '',
+                        fast_solution: solved.fastSolution || solved.shortcut || '',
+                        wrong_answer_reasons: solved.traps || [],
+                        similar_problem: solved.similarProblem || '',
+                        tutor_hint: solved.tutorHint || '',
+                        recommended_next_action: solved.recommendedNextAction || ''
+                    }
+                } : null,
+                warning: '고급 사진 분석이 잠깐 불안정해서 OCR 후 기본 풀이로 전환했습니다.'
+            };
+        }
         const ocr = bundle.ocr || {};
         const solve = bundle.analyze?.solve || null;
         const combined = [req.body?.graph_text, ocr.normalized_text || ocr.extracted_text || ocr.text].filter(Boolean).join('\n');
         const graph = graphAnalysis(combined), geometry = geometryAnalysis(combined);
         const warnings = [
+            fallbackWarning,
             bundle.warning,
             ...(ocr.warnings || []),
             '사진 속 숫자와 기호는 한 번 확인해 주세요.'

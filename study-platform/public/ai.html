@@ -55,6 +55,42 @@ function card(title, body) {
     const content = Array.isArray(body) ? `<ul>${body.map(item => `<li class="math">${window.kitaFormatMath(item)}</li>`).join('')}</ul>` : `<p class="math">${window.kitaFormatMath(body)}</p>`;
     return `<div class="card"><h3>${esc(title)}</h3>${content}</div>`;
 }
+function readableUploadError(raw) {
+    return String(raw || '')
+        .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 160);
+}
+async function imageForUpload(file) {
+    if (!file || !file.type.startsWith('image/')) return file;
+    return new Promise(resolve => {
+        const url = URL.createObjectURL(file);
+        const image = new Image();
+        image.onload = () => {
+            URL.revokeObjectURL(url);
+            const maxSide = 1600;
+            const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+            if (scale >= 1 && file.size < 1200 * 1024) return resolve(file);
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(image.width * scale));
+            canvas.height = Math.max(1, Math.round(image.height * scale));
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+            canvas.toBlob(blob => {
+                if (!blob) return resolve(file);
+                resolve(new File([blob], 'kita-photo.jpg', { type: 'image/jpeg' }));
+            }, 'image/jpeg', 0.82);
+        };
+        image.onerror = () => {
+            URL.revokeObjectURL(url);
+            resolve(file);
+        };
+        image.src = url;
+    });
+}
 async function api(path, body) {
     const res = await fetch(path, { method: 'POST', headers: headers(), body: JSON.stringify(body) });
     const data = await res.json().catch(() => ({}));
@@ -89,14 +125,18 @@ async function runMode() {
         } else {
             const file = document.getElementById('image').files[0];
             if (!file) throw new Error('사진을 먼저 선택해 주세요.');
+            answer.innerHTML = '<div class="bubble">사진을 정리해서 분석 중...</div>';
+            const uploadFile = await imageForUpload(file);
             const form = new FormData();
-            form.append('image', file);
+            form.append('image', uploadFile, uploadFile.name || file.name || 'problem.jpg');
             form.append('graph_text', text);
             form.append('subject', subject);
             const res = await fetch('/api/ai/graph-image', { method: 'POST', headers: headers(false), body: form });
-            const data = await res.json();
+            const raw = await res.text();
+            let data = {};
+            try { data = raw ? JSON.parse(raw) : {}; } catch (err) { data = { error: readableUploadError(raw) }; }
             if (!res.ok && window.kitaHandleAuthError?.(res.status)) throw new Error('로그인이 필요합니다.');
-            if (!res.ok) throw new Error(data.error || '사진 분석에 실패했습니다.');
+            if (!res.ok) throw new Error(data.error || '사진 분석 서버가 잠깐 불안정합니다. 다시 실행해 주세요.');
             const verified = data.verifiedAnswer || data.analyze?.solve?.verified_answer || '';
             const fast = data.fastSolution || data.shortcut || data.analyze?.solve?.fast_solution || '';
             const basic = data.basicSolution || data.solution || data.analyze?.solve?.basic_solution || '';
