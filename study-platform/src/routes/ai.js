@@ -4,6 +4,7 @@ const { checkStudyAiHealth, requestMultipart, requestStudyAi, solveWithStudyAi }
 const { askExternalAi, externalAiStatus, solveWithExternalAi } = require('../services/externalAiClient');
 const { addFailure, answerMatches } = require('../services/qualityStore');
 const { consume } = require('../services/plans');
+const auth = require('../middleware/auth');
 const { aiImageFileFilter } = require('../middleware/security');
 
 const router = express.Router();
@@ -74,6 +75,9 @@ function geometryAnalysis(text) {
 
 router.get('/health', async (req, res) => { const studyAi = await checkStudyAiHealth(); res.status(studyAi.ok ? 200 : 503).json({ ok: studyAi.ok, studyAi }); });
 router.get('/status', async (req, res) => { const studyAi = await checkStudyAiHealth(); res.json({ ok: true, node: 'kita-web', localModel: LOCAL_LLM_MODEL, externalAi: externalAiStatus(), studyAi, featureCount: 30 }); });
+
+router.use(auth);
+
 async function chat(req, res) {
     const message = clean(req.body?.message || req.body?.question || req.body?.problem_text, 5000);
     if (!message) return res.status(400).json({ ok: false, error: '질문을 입력해 주세요.' });

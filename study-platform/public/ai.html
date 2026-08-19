@@ -58,6 +58,7 @@ function card(title, body) {
 async function api(path, body) {
     const res = await fetch(path, { method: 'POST', headers: headers(), body: JSON.stringify(body) });
     const data = await res.json().catch(() => ({}));
+    if (!res.ok && window.kitaHandleAuthError?.(res.status)) throw new Error('로그인이 필요합니다.');
     if (!res.ok) throw new Error(data.error || data.msg || '요청에 실패했습니다.');
     return data;
 }
@@ -94,6 +95,7 @@ async function runMode() {
             form.append('subject', subject);
             const res = await fetch('/api/ai/graph-image', { method: 'POST', headers: headers(false), body: form });
             const data = await res.json();
+            if (!res.ok && window.kitaHandleAuthError?.(res.status)) throw new Error('로그인이 필요합니다.');
             if (!res.ok) throw new Error(data.error || '사진 분석에 실패했습니다.');
             answer.innerHTML = `<div class="grid two">${card('OCR 결과', data.ocr?.normalized_text || data.ocr?.extracted_text || '')}${card('결론', data.conclusion)}${card('그래프 분석', data.graph?.keyFeatures || [])}${card('도형 분석', data.geometry?.formulas || [])}</div>`;
         }

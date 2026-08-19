@@ -13,7 +13,43 @@
         return localStorage.getItem('token');
     }
 
+    function stripHash(path) {
+        return String(path || '').split('#')[0].split('?')[0] || '/';
+    }
+
+    function isProtectedPath(path) {
+        return [
+            '/ai.html',
+            '/solve.html',
+            '/upload.html',
+            '/list.html',
+            '/stats.html',
+            '/wrong.html',
+            '/rewards.html',
+            '/billing.html',
+            '/payment-success.html'
+        ].includes(stripHash(path));
+    }
+
+    function loginUrl(nextPath) {
+        const next = nextPath || `${location.pathname}${location.search}${location.hash}`;
+        return `/login.html?next=${encodeURIComponent(next)}`;
+    }
+
+    function go(path) {
+        if (isProtectedPath(path) && !token()) {
+            location.href = loginUrl(path);
+            return false;
+        }
+        location.href = path;
+        return true;
+    }
+
     function logout() {
+        fetch('/api/auth/logout', {
+            method: 'POST',
+            headers: window.kitaAuthHeaders ? window.kitaAuthHeaders() : {}
+        }).catch(() => {});
         localStorage.removeItem('token');
         localStorage.removeItem('kitaPlan');
         location.href = '/';
@@ -55,7 +91,7 @@
             const button = event.target.closest('button');
             if (!button) return;
             if (button.dataset.auth !== undefined) return token() ? logout() : location.href = '/login.html';
-            location.href = button.dataset.path;
+            go(button.dataset.path);
         });
         menuBtn.addEventListener('click', () => panel.hidden = !panel.hidden);
         document.addEventListener('click', event => {
@@ -68,8 +104,17 @@
     };
     window.kitaRequireLogin = function () {
         if (token()) return true;
-        location.href = '/login.html';
+        location.href = loginUrl();
         return false;
+    };
+    window.kitaGo = go;
+    window.kitaAuthRedirect = loginUrl;
+    window.kitaHandleAuthError = function (status) {
+        if (Number(status) !== 401) return false;
+        localStorage.removeItem('token');
+        localStorage.removeItem('kitaPlan');
+        location.href = loginUrl();
+        return true;
     };
     window.kitaFormatMath = function (value) {
         const escape = String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
@@ -86,6 +131,11 @@
             .replace(/x³/g, 'x<sup>3</sup>')
             .replace(/\n/g, '<br>');
     };
+
+    if (isProtectedPath(location.pathname) && !token()) {
+        location.replace(loginUrl());
+        return;
+    }
 
     function formatFormula(formula) {
         return String(formula)

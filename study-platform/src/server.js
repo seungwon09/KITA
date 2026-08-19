@@ -17,6 +17,7 @@ const paymentRoutes = require('./routes/payment');
 const rewardRoutes = require('./routes/reward');
 const qualityRoutes = require('./routes/quality');
 const auth = require('./middleware/auth');
+const { tokenFromRequest, verifyAccessToken } = require('./services/tokens');
 const {
     auditSecurityEvent,
     publicBaseUrl,
@@ -109,7 +110,41 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '4mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb', parameterLimit: 100 }));
-app.use(express.static(path.join(__dirname, '../public'), { maxAge: process.env.NODE_ENV === 'production' ? '1h' : 0 }));
+
+const protectedPages = new Set([
+    '/ai.html',
+    '/solve.html',
+    '/upload.html',
+    '/list.html',
+    '/stats.html',
+    '/wrong.html',
+    '/rewards.html',
+    '/billing.html',
+    '/payment-success.html'
+]);
+
+function protectedPageGate(req, res, next) {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    const requestPath = String(req.path || '').toLowerCase();
+    if (!protectedPages.has(requestPath)) return next();
+    try {
+        const token = tokenFromRequest(req);
+        const decoded = token ? verifyAccessToken(token) : null;
+        if (decoded?.email) return next();
+    } catch (err) {
+        auditSecurityEvent(req, 'protected_page_login_required', requestPath);
+    }
+    const nextUrl = req.originalUrl && req.originalUrl.startsWith('/') ? req.originalUrl : '/';
+    res.redirect(`/login.html?next=${encodeURIComponent(nextUrl)}`);
+}
+
+app.use(protectedPageGate);
+app.use(express.static(path.join(__dirname, '../public'), {
+    maxAge: 0,
+    setHeaders(res, filePath) {
+        if (/\.(html|js)$/i.test(filePath)) res.setHeader('Cache-Control', 'no-store');
+    }
+}));
 
 const apiLimiter = rateLimit({
     windowMs: 60 * 1000,

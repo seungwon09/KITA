@@ -3,7 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 const User = require('../models/user');
-const { verifyAccessToken } = require('./tokens');
+const { tokenFromRequest, verifyAccessToken } = require('./tokens');
 
 const DATA_DIR = path.join(__dirname, '../../data');
 const USAGE_PATH = path.join(DATA_DIR, 'usage_limits.json');
@@ -62,13 +62,8 @@ function saveUsage(store) {
     fs.writeFileSync(USAGE_PATH, JSON.stringify(store, null, 2), 'utf8');
 }
 
-function bearer(req) {
-    const value = String(req.headers.authorization || '');
-    return value.startsWith('Bearer ') ? value.slice(7) : '';
-}
-
 async function userFromRequest(req) {
-    const token = bearer(req);
+    const token = tokenFromRequest(req);
     if (!token || !process.env.JWT_SECRET) return null;
     try {
         const decoded = verifyAccessToken(token);

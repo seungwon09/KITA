@@ -4,7 +4,7 @@ const crypto = require('crypto');
 
 const User = require('../models/user');
 const { firebaseAdminStatus, firebaseClientConfig, verifyFirebaseIdToken } = require('../services/firebase');
-const { signAccessToken, verifyAccessToken } = require('../services/tokens');
+const { clearAuthCookie, setAuthCookie, signAccessToken, tokenFromRequest, verifyAccessToken } = require('../services/tokens');
 
 const router = express.Router();
 const MAX_LOGIN_ATTEMPTS = 5;
@@ -29,6 +29,12 @@ function kakaoRedirectUri(req) {
     return process.env.KAKAO_REDIRECT_URI || `${req.protocol}://${req.get('host')}/api/auth/kakao/callback`;
 }
 
+function sendAuth(res, req, user, msg = 'Login complete.') {
+    const token = signAccessToken(user);
+    setAuthCookie(res, token, req);
+    res.json({ ok: true, msg, token, user: safeUser(user) });
+}
+
 router.post('/register', async (req, res) => {
     try {
         const email = String(req.body?.email || '').trim().toLowerCase();
@@ -49,7 +55,7 @@ router.post('/register', async (req, res) => {
             lastLoginAt: new Date()
         });
         await user.save();
-        res.json({ ok: true, msg: 'Registration complete.', token: signAccessToken(user), user: safeUser(user) });
+        sendAuth(res, req, user, 'Registration complete.');
     } catch (err) {
         if (err.code === 11000) return res.status(400).json({ msg: 'This account or referral code is already in use.' });
         res.status(500).json({ msg: 'Registration failed.' });
@@ -76,7 +82,7 @@ router.post('/login', async (req, res) => {
         user.lockedUntil = undefined;
         user.lastLoginAt = new Date();
         await user.save();
-        res.json({ ok: true, token: signAccessToken(user), user: safeUser(user) });
+        sendAuth(res, req, user);
     } catch (err) {
         res.status(500).json({ msg: 'Login failed.' });
     }
@@ -84,7 +90,7 @@ router.post('/login', async (req, res) => {
 
 router.get('/me', async (req, res) => {
     try {
-        const token = String(req.headers.authorization || '').replace(/^Bearer\s+/, '');
+        const token = tokenFromRequest(req);
         if (!token) return res.status(401).json({ ok: false, msg: 'Login required.' });
         const decoded = verifyAccessToken(token);
         const user = await User.findOne({ email: decoded.email });
@@ -140,7 +146,7 @@ router.post('/firebase/login', async (req, res) => {
         user.lockedUntil = undefined;
         user.lastLoginAt = new Date();
         await user.save();
-        res.json({ ok: true, token: signAccessToken(user), user: safeUser(user) });
+        sendAuth(res, req, user);
     } catch (err) {
         const status = err.code === 'FIREBASE_NOT_CONFIGURED' ? 503 : 401;
         res.status(status).json({ ok: false, msg: status === 503 ? 'Firebase is not configured yet.' : 'Firebase login failed.' });
@@ -194,10 +200,16 @@ router.get('/kakao/callback', async (req, res) => {
         user.lastLoginAt = new Date();
         await user.save();
         const token = signAccessToken(user);
+        setAuthCookie(res, token, req);
         res.send(`<meta charset="UTF-8"><script>localStorage.setItem('token',${JSON.stringify(token)});location.href='/';</script>`);
     } catch (err) {
         res.redirect('/login.html?kakao=failed');
     }
+});
+
+router.post('/logout', (req, res) => {
+    clearAuthCookie(res, req);
+    res.json({ ok: true });
 });
 
 module.exports = router;

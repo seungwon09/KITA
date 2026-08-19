@@ -1,6 +1,7 @@
 const express = require('express');
 
 const { addFailure, loadStore, metrics } = require('../services/qualityStore');
+const auth = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -15,7 +16,7 @@ router.get('/status', (req, res) => {
     });
 });
 
-router.post('/report', (req, res) => {
+router.post('/report', auth, (req, res) => {
     const body = req.body || {};
     if (!String(body.question || '').trim()) return res.status(400).json({ ok: false, error: '문제를 입력해 주세요.' });
     const failure = addFailure({

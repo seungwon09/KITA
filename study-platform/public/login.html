@@ -37,6 +37,10 @@
 <script>
 let isRegister = false;
 const qs = name => new URLSearchParams(location.search).get(name);
+function safeNext() {
+    const value = qs('next') || '/';
+    return value.startsWith('/') && !value.startsWith('//') ? value : '/';
+}
 function toggleMode() {
     isRegister = !isRegister;
     document.getElementById('formTitle').textContent = isRegister ? '회원가입' : '로그인';
@@ -61,8 +65,8 @@ async function submitAuth() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.msg || '처리에 실패했습니다.');
         localStorage.setItem('token', data.token);
-        result.innerHTML = '<div class="success">완료되었습니다. 홈으로 이동합니다.</div>';
-        setTimeout(() => location.href = '/', 500);
+        result.innerHTML = '<div class="success">완료되었습니다. 이동합니다.</div>';
+        setTimeout(() => location.href = safeNext(), 500);
     } catch (err) {
         result.innerHTML = `<div class="notice">${err.message}</div>`;
     }
@@ -152,8 +156,8 @@ window.signInWithFirebase = async function () {
         const data = await res.json();
         if (!res.ok) throw new Error(data.msg || 'Firebase 로그인에 실패했습니다.');
         localStorage.setItem('token', data.token);
-        resultBox.innerHTML = '<div class="success">구글 로그인이 완료되었습니다. 홈으로 이동합니다.</div>';
-        setTimeout(() => location.href = '/', 500);
+        resultBox.innerHTML = '<div class="success">구글 로그인이 완료되었습니다. 이동합니다.</div>';
+        setTimeout(() => location.href = safeNext(), 500);
     } catch (err) {
         resultBox.innerHTML = `<div class="notice">${err.message}</div>`;
     }

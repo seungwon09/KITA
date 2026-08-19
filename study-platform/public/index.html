@@ -15,8 +15,8 @@
             <h1>질문부터 시험 풀이까지<br>한곳에서 정리</h1>
             <p class="muted">KITA는 수학과 과학 문제 풀이, 일반 질문, 그래프·도형 분석, 사진 인식을 한 화면에서 처리합니다.</p>
             <div class="toolbar">
-                <button class="btn primary" onclick="location.href='/ai.html'">AI에게 질문하기</button>
-                <button class="btn ghost" onclick="location.href='/ai.html#solve'">문제 풀기</button>
+                <button class="btn primary" onclick="window.kitaGo('/ai.html')">AI에게 질문하기</button>
+                <button class="btn ghost" onclick="window.kitaGo('/ai.html#solve')">문제 풀기</button>
             </div>
         </div>
         <div class="panel">
@@ -30,11 +30,11 @@
         </div>
     </section>
     <section class="grid">
-        <div class="card clickable" onclick="location.href='/ai.html'"><h3>통합 AI 학습</h3><p class="muted">질문, 풀이, 그래프, 도형, 사진 인식을 한곳에서 사용합니다.</p></div>
-        <div class="card clickable" onclick="location.href='/stats.html'"><h3>학습 통계</h3><p class="muted">정답률과 평균 시간, 최근 성장 흐름을 확인합니다.</p></div>
-        <div class="card clickable" onclick="location.href='/wrong.html'"><h3>오답노트</h3><p class="muted">틀린 문제와 반복 실수를 모아 복습합니다.</p></div>
-        <div class="card clickable" onclick="location.href='/rewards.html'"><h3>포인트</h3><p class="muted">친구 초대와 풀이 공유 보상을 확인합니다.</p></div>
-        <div class="card clickable" onclick="location.href='/billing.html'"><h3>업그레이드</h3><p class="muted">필요한 풀이 수준과 사용량에 맞는 요금제를 선택합니다.</p></div>
+        <div class="card clickable" onclick="window.kitaGo('/ai.html')"><h3>통합 AI 학습</h3><p class="muted">질문, 풀이, 그래프, 도형, 사진 인식을 한곳에서 사용합니다.</p></div>
+        <div class="card clickable" onclick="window.kitaGo('/stats.html')"><h3>학습 통계</h3><p class="muted">정답률과 평균 시간, 최근 성장 흐름을 확인합니다.</p></div>
+        <div class="card clickable" onclick="window.kitaGo('/wrong.html')"><h3>오답노트</h3><p class="muted">틀린 문제와 반복 실수를 모아 복습합니다.</p></div>
+        <div class="card clickable" onclick="window.kitaGo('/rewards.html')"><h3>포인트</h3><p class="muted">친구 초대와 풀이 공유 보상을 확인합니다.</p></div>
+        <div class="card clickable" onclick="window.kitaGo('/billing.html')"><h3>업그레이드</h3><p class="muted">필요한 풀이 수준과 사용량에 맞는 요금제를 선택합니다.</p></div>
     </section>
 </main>
 <p class="footer">KITA</p>
