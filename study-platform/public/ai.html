@@ -97,7 +97,12 @@ async function runMode() {
             const data = await res.json();
             if (!res.ok && window.kitaHandleAuthError?.(res.status)) throw new Error('로그인이 필요합니다.');
             if (!res.ok) throw new Error(data.error || '사진 분석에 실패했습니다.');
-            answer.innerHTML = `<div class="grid two">${card('OCR 결과', data.ocr?.normalized_text || data.ocr?.extracted_text || '')}${card('결론', data.conclusion)}${card('그래프 분석', data.graph?.keyFeatures || [])}${card('도형 분석', data.geometry?.formulas || [])}</div>`;
+            const verified = data.verifiedAnswer || data.analyze?.solve?.verified_answer || '';
+            const fast = data.fastSolution || data.shortcut || data.analyze?.solve?.fast_solution || '';
+            const basic = data.basicSolution || data.solution || data.analyze?.solve?.basic_solution || '';
+            const mistakes = data.wrongAnswerReasons || data.analyze?.solve?.wrong_answer_reasons || [];
+            answer.innerHTML = `<div class="toolbar">${verified ? `<span class="pill ok">정답 ${esc(verified)}</span>` : ''}<span class="pill">${esc(data.access?.planName || '사진 분석')}</span></div><div class="grid two">${card('인식한 문제', data.ocr?.normalized_text || data.ocr?.extracted_text || '')}${card('빠른 풀이', fast || data.conclusion)}${card('기본 풀이', basic)}${card('주의할 점', data.warnings || mistakes || [])}</div>`;
+            if (!verified && (data.graph || data.geometry)) answer.insertAdjacentHTML('beforeend', `<div class="grid two">${card('그래프 분석', data.graph?.keyFeatures || [])}${card('도형 분석', data.geometry?.formulas || [])}</div>`);
         }
     } catch (err) {
         answer.innerHTML = `<div class="notice">${esc(err.message)}</div>`;

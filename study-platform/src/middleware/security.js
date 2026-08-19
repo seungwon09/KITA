@@ -109,12 +109,12 @@ function materialFileFilter(req, file, callback) {
 function aiImageFileFilter(req, file, callback) {
     const extension = path.extname(file.originalname || '').toLowerCase();
     const allowed = {
-        '.png': 'image/png',
-        '.jpg': 'image/jpeg',
-        '.jpeg': 'image/jpeg',
-        '.webp': 'image/webp'
+        '.png': ['image/png', 'application/octet-stream'],
+        '.jpg': ['image/jpeg', 'application/octet-stream'],
+        '.jpeg': ['image/jpeg', 'application/octet-stream'],
+        '.webp': ['image/webp', 'application/octet-stream']
     };
-    if (allowed[extension] === String(file.mimetype || '').toLowerCase()) return callback(null, true);
+    if (allowed[extension]?.includes(String(file.mimetype || '').toLowerCase())) return callback(null, true);
     auditSecurityEvent(req, 'ai_upload_type_rejected', extension);
     const error = new Error('IMAGE_TYPE_NOT_ALLOWED');
     error.code = 'UPLOAD_TYPE_NOT_ALLOWED';

@@ -18,6 +18,7 @@ const LOCAL_LLM_MODEL = process.env.LOCAL_LLM_MODEL || 'qwen2.5:3b';
 const clean = (value, max = 8000) => String(value || '').trim().slice(0, max);
 const subject = req => ['math', 'science', 'mixed', 'auto'].includes(req.body?.subject) ? req.body.subject : 'auto';
 const fmt = value => Number.isInteger(value) ? String(value) : String(Number(value.toFixed(4)));
+const studyAiPlan = planId => ({ free: 'free', middle: 'basic', advanced: 'pro', ultimate: 'premium' }[planId] || 'free');
 
 function limit(type) {
     return async (req, res, next) => {
@@ -123,10 +124,55 @@ router.post('/ocr', limit('ocr'), upload.single('image'), async (req, res) => {
 router.post('/graph-image', limit('ocr'), upload.single('image'), async (req, res) => {
     if (!req.file) return res.status(400).json({ ok: false, error: '이미지 파일이 없습니다.' });
     try {
-        const form = new FormData(); form.append('image', new Blob([req.file.buffer], { type: req.file.mimetype }), req.file.originalname || 'graph.png');
-        const ocr = await requestMultipart('/ocr', form), combined = [req.body?.graph_text, ocr.normalized_text || ocr.extracted_text || ocr.text].filter(Boolean).join('\n');
+        const form = new FormData();
+        form.append('image', new Blob([req.file.buffer], { type: req.file.mimetype || 'application/octet-stream' }), req.file.originalname || 'problem.png');
+        form.append('user_id', req.user?.email || clean(req.body?.user_id || 'kita-user', 120));
+        form.append('subject', subject(req));
+        form.append('plan', studyAiPlan(req.kitaAccess?.plan?.id));
+        form.append('student_level', clean(req.body?.student_level || 'intermediate', 80));
+        form.append('elapsed_seconds', String(Number(req.body?.solveTime || req.body?.elapsed_seconds || 0) || 0));
+        form.append('auto_solve', 'true');
+        const bundle = await requestMultipart('/app-ai/mobile/ocr-analyze', form, { timeoutMs: 90000 });
+        const ocr = bundle.ocr || {};
+        const solve = bundle.analyze?.solve || null;
+        const combined = [req.body?.graph_text, ocr.normalized_text || ocr.extracted_text || ocr.text].filter(Boolean).join('\n');
         const graph = graphAnalysis(combined), geometry = geometryAnalysis(combined);
-        res.json({ ok: true, type: 'image_analysis', ocr, graph, geometry, conclusion: graph.confidence >= geometry.confidence ? graph.conclusion : geometry.conclusion, warnings: ['사진 속 숫자와 기호는 한 번 확인해 주세요.'] });
+        const warnings = [
+            bundle.warning,
+            ...(ocr.warnings || []),
+            '사진 속 숫자와 기호는 한 번 확인해 주세요.'
+        ].filter(Boolean);
+        if (solve) {
+            return res.json({
+                ok: true,
+                type: 'photo_problem_solution',
+                ocr,
+                analyze: bundle.analyze,
+                graph,
+                geometry,
+                verifiedAnswer: solve.verified_answer || '',
+                solution: solve.basic_solution || '',
+                shortcut: solve.fast_solution || '',
+                basicSolution: solve.basic_solution || '',
+                fastSolution: solve.fast_solution || '',
+                wrongAnswerReasons: solve.wrong_answer_reasons || [],
+                similarProblem: solve.similar_problem || '',
+                tutorHint: solve.tutor_hint || '',
+                recommendedNextAction: solve.recommended_next_action || '',
+                conclusion: solve.verified_answer ? `정답은 ${solve.verified_answer}입니다.` : solve.fast_solution || graph.conclusion,
+                warnings,
+                access: { planId: req.kitaAccess.plan.id, planName: req.kitaAccess.plan.name, remainingToday: req.kitaAccess.remaining }
+            });
+        }
+        res.json({
+            ok: true,
+            type: 'image_analysis',
+            ocr,
+            graph,
+            geometry,
+            conclusion: graph.confidence >= geometry.confidence ? graph.conclusion : geometry.conclusion,
+            warnings
+        });
     } catch (err) { res.status(503).json({ ok: false, error: err.message }); }
 });
 router.post('/solve', limit('ai'), async (req, res) => {
