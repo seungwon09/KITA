@@ -16,11 +16,15 @@
    - 카카오 개발자 콘솔에서 REST API 키를 발급받으면 `.env`의 `KAKAO_REST_API_KEY`에 넣습니다.
    - Redirect URI는 개발 중 `http://127.0.0.1:3000/api/auth/kakao/callback`, 배포 후 `https://도메인/api/auth/kakao/callback`입니다.
 
-4. 결제 개발모드
+4. Firebase 보안 로그인 준비
+   - Firebase 프로젝트에서 서비스 계정을 만들고 `.env`에 `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`를 넣습니다.
+   - 앱/웹에서 받은 Firebase ID 토큰은 `POST /api/auth/firebase/login`으로 보내면 KITA 계정 토큰으로 교환됩니다.
+
+5. 결제 개발모드
    - `ALLOW_DEV_PAYMENTS=true`이면 실제 결제 키 없이도 유료 플랜 활성화 흐름을 테스트합니다.
    - 실결제는 `TOSS_CLIENT_KEY`, `TOSS_SECRET_KEY`가 생긴 뒤 켭니다.
 
-5. 앱 품질 강화
+6. 앱 품질 강화
    - AI 답변 형식, 모바일 UI, 관리자 자료 업로드/검증 흐름을 계속 개선합니다.
 
 ## 사업자등록 후 바꾸는 것
@@ -29,4 +33,3 @@
 2. 이용약관/개인정보처리방침/환불정책 공개
 3. 실제 도메인과 HTTPS 고정
 4. 운영 DB 백업 주기 설정
-

@@ -20,6 +20,11 @@ const UserSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
+    firebaseUid: {
+        type: String,
+        default: '',
+        index: true
+    },
     name: {
         type: String,
         default: ''

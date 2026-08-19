@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 
 const User = require('../models/user');
+const { firebaseAdminStatus, firebaseClientConfig, verifyFirebaseIdToken } = require('../services/firebase');
 const { signAccessToken, verifyAccessToken } = require('../services/tokens');
 
 const router = express.Router();
@@ -96,6 +97,54 @@ router.get('/me', async (req, res) => {
 
 router.get('/kakao/status', (req, res) => {
     res.json({ ok: true, configured: Boolean(process.env.KAKAO_REST_API_KEY), redirectUri: kakaoRedirectUri(req) });
+});
+
+router.get('/firebase/status', (req, res) => {
+    res.json({ ok: true, admin: firebaseAdminStatus(), client: firebaseClientConfig() });
+});
+
+router.get('/firebase/config', (req, res) => {
+    const client = firebaseClientConfig();
+    res.json({ ok: true, ...client });
+});
+
+router.post('/firebase/login', async (req, res) => {
+    try {
+        const idToken = String(req.body?.idToken || '').trim();
+        const referralCode = String(req.body?.referralCode || req.body?.ref || '').trim().toUpperCase();
+        if (!idToken) return res.status(400).json({ ok: false, msg: 'Firebase ID token is required.' });
+
+        const decoded = await verifyFirebaseIdToken(idToken);
+        const firebaseUid = String(decoded.uid || '');
+        const email = String(decoded.email || `firebase_${firebaseUid}@firebase.local`).toLowerCase();
+        if (!firebaseUid) return res.status(400).json({ ok: false, msg: 'Invalid Firebase token.' });
+
+        let user = await User.findOne({ firebaseUid }) || await User.findOne({ email });
+        if (!user) {
+            user = new User({
+                email,
+                password: await bcrypt.hash(`firebase:${firebaseUid}:${crypto.randomUUID()}`, 10),
+                provider: 'firebase',
+                firebaseUid,
+                name: decoded.name || '',
+                referralCode: createReferralCode(email),
+                referredBy: referralCode,
+                points: referralCode ? 500 : 0,
+                plan: 'free'
+            });
+        }
+        user.provider = user.provider === 'local' ? 'firebase' : user.provider || 'firebase';
+        user.firebaseUid = firebaseUid;
+        user.name = user.name || decoded.name || '';
+        user.failedLoginAttempts = 0;
+        user.lockedUntil = undefined;
+        user.lastLoginAt = new Date();
+        await user.save();
+        res.json({ ok: true, token: signAccessToken(user), user: safeUser(user) });
+    } catch (err) {
+        const status = err.code === 'FIREBASE_NOT_CONFIGURED' ? 503 : 401;
+        res.status(status).json({ ok: false, msg: status === 503 ? 'Firebase is not configured yet.' : 'Firebase login failed.' });
+    }
 });
 
 router.get('/kakao/start', (req, res) => {

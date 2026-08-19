@@ -5,6 +5,7 @@ const multer = require('multer');
 const crypto = require('crypto');
 
 const { solveWithStudyAi } = require('../services/studyAiClient');
+const { firebaseAdminStatus } = require('../services/firebase');
 const { parseUploadedMaterial } = require('../services/materialParser');
 const { UPLOAD_DIR, addBenchmarkCases, addFailure, answerMatches, ensureDataDirs, id, loadStore, metrics, saveStore } = require('../services/qualityStore');
 const { auditSecurityEvent, materialFileFilter, secureEqual } = require('../middleware/security');
@@ -59,6 +60,11 @@ function releaseStatus(req) {
             label: '카카오 로그인',
             ready: Boolean(process.env.KAKAO_REST_API_KEY),
             detail: process.env.KAKAO_REST_API_KEY ? '개발자 키 연결됨' : 'REST API 키 입력 필요'
+        },
+        {
+            label: 'Firebase 보안 로그인',
+            ready: firebaseAdminStatus().ready,
+            detail: firebaseAdminStatus().ready ? 'ID 토큰 검증 가능' : 'Firebase Admin 설정 필요'
         },
         {
             label: '결제',
