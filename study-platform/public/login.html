@@ -27,6 +27,7 @@
             <div class="toolbar">
                 <button class="btn primary" id="submitBtn" onclick="submitAuth()">로그인</button>
                 <button class="btn ghost" id="toggleBtn" onclick="toggleMode()">회원가입으로 전환</button>
+                <button class="btn ghost" id="firebaseLoginBtn" onclick="signInWithFirebase()" disabled>구글로 시작</button>
                 <button class="btn ghost" onclick="location.href='/api/auth/kakao/start'">카카오로 시작</button>
             </div>
             <div id="result" class="result"></div>
@@ -87,11 +88,78 @@ async function checkFirebase() {
         notice.textContent = 'Firebase 상태를 확인하지 못했습니다.';
     }
 }
+window.signInWithFirebase = async function () {
+    document.getElementById('result').innerHTML = '<div class="notice">Firebase 설정을 불러오는 중입니다.</div>';
+};
 if (qs('ref')) toggleMode();
 if (qs('ref')) document.getElementById('referralCode').value = qs('ref');
 if (qs('kakao') === 'not-configured') document.getElementById('kakaoNotice').textContent = '카카오 개발자 키가 아직 연결되지 않았습니다.';
 checkKakao();
-checkFirebase();
+</script>
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
+import { getAuth, GoogleAuthProvider, signInWithPopup } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
+
+const firebaseButton = document.getElementById('firebaseLoginBtn');
+const firebaseNotice = document.getElementById('firebaseNotice');
+const resultBox = document.getElementById('result');
+let firebaseAuth = null;
+let googleProvider = null;
+
+function message(text, ok = false) {
+    firebaseNotice.className = ok ? 'success' : 'notice';
+    firebaseNotice.textContent = text;
+}
+
+async function setupFirebaseLogin() {
+    try {
+        const status = await fetch('/api/auth/firebase/status').then(res => res.json());
+        if (!status.client?.configured) {
+            message('Firebase Web App 설정값을 Render 환경변수에 넣으면 구글 로그인을 사용할 수 있습니다.');
+            return;
+        }
+        if (!status.admin?.ready) {
+            message('Firebase 서비스 계정 키를 Render에 넣으면 구글 로그인이 켜집니다.');
+            return;
+        }
+        const app = initializeApp(status.client.config);
+        firebaseAuth = getAuth(app);
+        googleProvider = new GoogleAuthProvider();
+        firebaseButton.disabled = false;
+        message('구글/Firebase 로그인이 연결되어 있습니다.', true);
+    } catch (err) {
+        message('Firebase 로그인 상태를 확인하지 못했습니다.');
+    }
+}
+
+window.signInWithFirebase = async function () {
+    if (!firebaseAuth || !googleProvider) {
+        resultBox.innerHTML = '<div class="notice">Firebase 설정이 아직 완료되지 않았습니다.</div>';
+        return;
+    }
+    resultBox.innerHTML = '<div class="bubble">구글 로그인 중...</div>';
+    try {
+        const credential = await signInWithPopup(firebaseAuth, googleProvider);
+        const idToken = await credential.user.getIdToken();
+        const res = await fetch('/api/auth/firebase/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                idToken,
+                referralCode: document.getElementById('referralCode').value.trim() || new URLSearchParams(location.search).get('ref') || ''
+            })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.msg || 'Firebase 로그인에 실패했습니다.');
+        localStorage.setItem('token', data.token);
+        resultBox.innerHTML = '<div class="success">구글 로그인이 완료되었습니다. 홈으로 이동합니다.</div>';
+        setTimeout(() => location.href = '/', 500);
+    } catch (err) {
+        resultBox.innerHTML = `<div class="notice">${err.message}</div>`;
+    }
+};
+
+setupFirebaseLogin();
 </script>
 <script src="/kita-nav.js"></script>
 </body>

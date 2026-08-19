@@ -68,13 +68,19 @@ app.use(helmet({
         directives: {
             defaultSrc: ["'self'"],
             baseUri: ["'self'"],
-            connectSrc: ["'self'"],
+            connectSrc: [
+                "'self'",
+                'https://identitytoolkit.googleapis.com',
+                'https://securetoken.googleapis.com',
+                'https://www.googleapis.com'
+            ],
             fontSrc: ["'self'", 'data:'],
             formAction: ["'self'"],
+            frameSrc: ["'self'", 'https://accounts.google.com', 'https://kita-ec927.firebaseapp.com'],
             frameAncestors: ["'none'"],
             imgSrc: ["'self'", 'data:', 'blob:'],
             objectSrc: ["'none'"],
-            scriptSrc: ["'self'", "'unsafe-inline'"],
+            scriptSrc: ["'self'", "'unsafe-inline'", 'https://www.gstatic.com'],
             scriptSrcAttr: ["'unsafe-inline'"],
             styleSrc: ["'self'", "'unsafe-inline'"],
             upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null
