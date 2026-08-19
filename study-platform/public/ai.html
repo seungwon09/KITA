@@ -23,12 +23,12 @@
                 <button id="tab-geometry" class="btn ghost" onclick="setMode('geometry')">도형</button>
                 <button id="tab-image" class="btn ghost" onclick="setMode('image')">사진</button>
             </div>
-            <div class="field"><label id="promptLabel" for="prompt">AI에게 물어보기</label><textarea id="prompt" placeholder="질문이나 문제를 입력하세요."></textarea></div>
+            <div id="promptBox" class="field"><label id="promptLabel" for="prompt">AI에게 물어보기</label><textarea id="prompt" placeholder="질문이나 문제를 입력하세요."></textarea></div>
             <div class="row">
                 <div class="field"><label for="subject">과목</label><select id="subject"><option value="auto">자동</option><option value="math">수학</option><option value="science">과학</option><option value="mixed">수학·과학</option></select></div>
                 <div class="field"><label for="elapsed">풀이 시간</label><input id="elapsed" type="number" value="90" min="0"></div>
             </div>
-            <div id="imageBox" class="field" hidden><label for="image">문제 또는 그래프 사진</label><input id="image" type="file" accept="image/*"></div>
+            <div id="imageBox" class="field" hidden><label for="image">문제/그래프/도형 사진</label><input id="image" type="file" accept="image/*"></div>
             <button class="btn primary" onclick="runMode()">실행</button>
         </div>
         <div class="panel" id="adminStatusPanel" hidden>
@@ -47,8 +47,12 @@ function headers(json = true) { return { ...(json ? { 'Content-Type': 'applicati
 function setMode(next) {
     mode = next;
     ['chat', 'solve', 'graph', 'geometry', 'image'].forEach(name => document.getElementById(`tab-${name}`).className = `btn ${name === mode ? 'primary' : 'ghost'}`);
+    document.getElementById('promptBox').hidden = mode === 'image';
     document.getElementById('imageBox').hidden = mode !== 'image';
-    document.getElementById('promptLabel').textContent = { chat: 'AI에게 물어보기', solve: '문제 입력', graph: '그래프 식 또는 설명', geometry: '도형 문제 또는 설명', image: '사진에 대한 설명' }[mode];
+    document.getElementById('promptLabel').textContent = { chat: 'AI에게 물어보기', solve: '문제 입력', graph: '그래프 식 또는 설명', geometry: '도형 문제 또는 설명', image: '' }[mode];
+    document.getElementById('answer').innerHTML = mode === 'image'
+        ? '<div class="bubble">사진을 선택하고 실행을 눌러 주세요.</div>'
+        : '<div class="bubble">질문이나 문제를 입력하고 실행을 눌러 주세요.</div>';
 }
 function card(title, body) {
     if (!body && body !== 0) return '';
@@ -129,7 +133,7 @@ async function runMode() {
             const uploadFile = await imageForUpload(file);
             const form = new FormData();
             form.append('image', uploadFile, uploadFile.name || file.name || 'problem.jpg');
-            form.append('graph_text', text);
+            form.append('graph_text', '');
             form.append('subject', subject);
             const res = await fetch('/api/ai/graph-image', { method: 'POST', headers: headers(false), body: form });
             const raw = await res.text();
