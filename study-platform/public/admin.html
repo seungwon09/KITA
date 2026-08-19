@@ -80,7 +80,7 @@
 <script>
 let adminPin = sessionStorage.getItem('adminPin') || '';
 const esc = value => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-const headers = json => ({ ...(json ? { 'Content-Type': 'application/json' } : {}), 'x-admin-pin': adminPin });
+const headers = json => ({ ...(json ? { 'Content-Type': 'application/json' } : {}), ...window.kitaAuthHeaders(), 'x-admin-pin': adminPin });
 function showView(name) {
     document.querySelectorAll('.admin-view').forEach(view => view.hidden = view.id !== `view-${name}`);
     document.querySelectorAll('.admin-tab').forEach(button => button.classList.toggle('active', button.dataset.view === name));
@@ -91,7 +91,7 @@ async function unlock() {
     const res = await fetch('/api/admin/status', { headers: headers(false) });
     const data = await res.json();
     if (!res.ok) return document.getElementById('gateMsg').innerHTML = `<div class="notice">${esc(data.error)}</div>`;
-    sessionStorage.setItem('adminPin', adminPin);
+    if (adminPin) sessionStorage.setItem('adminPin', adminPin);
     document.getElementById('gate').hidden = true;
     document.getElementById('adminPanel').hidden = false;
     await Promise.all([loadDashboard(), loadLibrary()]);
@@ -161,6 +161,7 @@ async function runBenchmark() {
 }
 async function resolveFailure(id) { await fetch(`/api/admin/failures/${id}`, { method: 'PATCH', headers: headers(true), body: JSON.stringify({ status: 'resolved' }) }); loadDashboard(); }
 if (adminPin) { document.getElementById('pin').value = adminPin; unlock(); }
+else if (localStorage.getItem('token')) { unlock(); }
 </script>
 </body>
 </html>

@@ -6,6 +6,8 @@ const crypto = require('crypto');
 
 const { solveWithStudyAi } = require('../services/studyAiClient');
 const { firebaseAdminStatus } = require('../services/firebase');
+const { isTestAdminEmail } = require('../services/plans');
+const { tokenFromRequest, verifyAccessToken } = require('../services/tokens');
 const { parseUploadedMaterial } = require('../services/materialParser');
 const { UPLOAD_DIR, addBenchmarkCases, addFailure, answerMatches, ensureDataDirs, id, loadStore, metrics, saveStore } = require('../services/qualityStore');
 const { auditSecurityEvent, materialFileFilter, publicBaseUrl, secureEqual } = require('../middleware/security');
@@ -13,6 +15,16 @@ const { auditSecurityEvent, materialFileFilter, publicBaseUrl, secureEqual } = r
 const router = express.Router();
 
 function requireAdmin(req, res, next) {
+    try {
+        const token = tokenFromRequest(req);
+        const decoded = token ? verifyAccessToken(token) : null;
+        if (isTestAdminEmail(decoded?.email)) {
+            req.adminEmail = decoded.email;
+            return next();
+        }
+    } catch (err) {
+        // Fall through to PIN auth.
+    }
     if (!process.env.ADMIN_PIN) return res.status(503).json({ ok: false, error: 'ADMIN_PIN_NOT_CONFIGURED' });
     if (!secureEqual(req.headers['x-admin-pin'], process.env.ADMIN_PIN)) {
         auditSecurityEvent(req, 'admin_pin_rejected');

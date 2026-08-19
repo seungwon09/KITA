@@ -47,6 +47,34 @@ const plans = [
     }
 ];
 
+const TEST_ADMIN_REMAINING = 999999;
+
+function testAdminEmails() {
+    return String(process.env.TEST_ADMIN_EMAILS || 'test@test.com')
+        .split(',')
+        .map(email => email.trim().toLowerCase())
+        .filter(Boolean);
+}
+
+function isTestAdminEmail(email) {
+    return testAdminEmails().includes(String(email || '').trim().toLowerCase());
+}
+
+function isTestAdminUser(user) {
+    return isTestAdminEmail(user?.email);
+}
+
+function testAdminPlan() {
+    return {
+        ...planById('ultimate'),
+        name: '테스트 관리자',
+        price: 0,
+        label: '테스트 관리자 / 전체 기능',
+        description: '테스트 관리자 계정은 결제 없이 모든 KITA 기능을 사용할 수 있습니다.',
+        limits: { aiPerDay: TEST_ADMIN_REMAINING, ocrPerMonth: TEST_ADMIN_REMAINING, eliteSolution: true }
+    };
+}
+
 function loadUsage() {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     if (!fs.existsSync(USAGE_PATH)) return {};
@@ -67,7 +95,21 @@ async function userFromRequest(req) {
     if (!token || !process.env.JWT_SECRET) return null;
     try {
         const decoded = verifyAccessToken(token);
-        return decoded.email ? await User.findOne({ email: decoded.email }) : null;
+        if (!decoded.email) return null;
+        const user = await User.findOne({ email: decoded.email });
+        if (user) return user;
+        if (isTestAdminEmail(decoded.email)) {
+            return {
+                email: String(decoded.email).toLowerCase(),
+                plan: 'ultimate',
+                subscription: {
+                    status: 'active',
+                    source: 'test-admin',
+                    expiresAt: new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000)
+                }
+            };
+        }
+        return null;
     } catch (err) {
         return null;
     }
@@ -79,6 +121,7 @@ function planById(id) {
 
 function activePlan(user) {
     if (!user) return plans[0];
+    if (isTestAdminUser(user)) return testAdminPlan();
     const subscription = user.subscription || {};
     const expired = subscription.expiresAt && new Date(subscription.expiresAt) <= new Date();
     if (user.plan === 'free' || subscription.status === 'active' && !expired) return planById(user.plan);
@@ -94,6 +137,15 @@ function usageKey(req, user) {
 async function consume(req, type) {
     const user = await userFromRequest(req);
     const plan = activePlan(user);
+    if (isTestAdminUser(user)) {
+        return {
+            ok: true,
+            user,
+            plan,
+            usage: { testAdmin: true, ai: 0, ocr: 0 },
+            remaining: TEST_ADMIN_REMAINING
+        };
+    }
     const store = loadUsage();
     const key = usageKey(req, user);
     const today = new Date().toISOString().slice(0, 10);
@@ -134,4 +186,13 @@ async function planStatus(req) {
     return { user, plan: activePlan(user) };
 }
 
-module.exports = { activePlan, consume, planById, plans, planStatus, userFromRequest };
+module.exports = {
+    activePlan,
+    consume,
+    isTestAdminEmail,
+    isTestAdminUser,
+    planById,
+    plans,
+    planStatus,
+    userFromRequest
+};
