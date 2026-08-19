@@ -73,6 +73,7 @@ function publicBaseUrl() {
 
 function requireHttps(req, res, next) {
     if (process.env.ENFORCE_HTTPS !== 'true') return next();
+    if (req.path === '/api/live' || req.path === '/api/health') return next();
     const forwarded = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
     if (req.secure || forwarded === 'https') return next();
     auditSecurityEvent(req, 'https_required');
