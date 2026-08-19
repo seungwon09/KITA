@@ -140,6 +140,16 @@ function arrayOfStrings(value) {
     return value.map(item => clean(item, 1000)).filter(Boolean).slice(0, 8);
 }
 
+function detectImageMimeType(buffer, fallback = 'image/jpeg') {
+    const declared = String(fallback || '').toLowerCase();
+    if (declared.startsWith('image/')) return declared;
+    const head = Buffer.from(buffer || []).subarray(0, 12);
+    if (head.length >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return 'image/jpeg';
+    if (head.length >= 8 && head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47) return 'image/png';
+    if (head.length >= 12 && head.subarray(0, 4).toString('ascii') === 'RIFF' && head.subarray(8, 12).toString('ascii') === 'WEBP') return 'image/webp';
+    return 'image/jpeg';
+}
+
 async function solveWithExternalAi({ question, subject = 'auto', elapsedSeconds = 0, studentLevel = 'intermediate' }) {
     const problemText = clean(question, 7000);
     const safeSubject = normalizeSubject(subject);
@@ -250,7 +260,8 @@ async function solvePhotoWithExternalAi({
     if (imageBuffer.length > 6 * 1024 * 1024) throw new Error('Image is too large for vision analysis.');
 
     const safeSubject = normalizeSubject(subject);
-    const dataUrl = `data:${mimeType || 'image/jpeg'};base64,${Buffer.from(imageBuffer).toString('base64')}`;
+    const safeMimeType = detectImageMimeType(imageBuffer, mimeType);
+    const dataUrl = `data:${safeMimeType};base64,${Buffer.from(imageBuffer).toString('base64')}`;
     const schema = {
         image_kind: 'text_problem|graph|geometry|mixed|unknown',
         extracted_text: 'image text exactly as read, with corrected math notation',
