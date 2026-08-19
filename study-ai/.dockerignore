@@ -1,8 +1,10 @@
 __pycache__
 *.pyc
+.env
+.env.*
 .venv
 venv
+study_ai.sqlite3
+ocr_test.png
 *.log
 server*.log
-.env
-ocr_test.png

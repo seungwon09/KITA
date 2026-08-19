@@ -8,7 +8,7 @@ const { solveWithStudyAi } = require('../services/studyAiClient');
 const { firebaseAdminStatus } = require('../services/firebase');
 const { parseUploadedMaterial } = require('../services/materialParser');
 const { UPLOAD_DIR, addBenchmarkCases, addFailure, answerMatches, ensureDataDirs, id, loadStore, metrics, saveStore } = require('../services/qualityStore');
-const { auditSecurityEvent, materialFileFilter, secureEqual } = require('../middleware/security');
+const { auditSecurityEvent, materialFileFilter, publicBaseUrl, secureEqual } = require('../middleware/security');
 
 const router = express.Router();
 
@@ -42,7 +42,7 @@ function publicMaterial(item) {
 
 function releaseStatus(req) {
     const rootDir = path.resolve(__dirname, '../../..');
-    const publicBaseUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
+    const detectedPublicBaseUrl = publicBaseUrl() || `${req.protocol}://${req.get('host')}`;
     const hasTossKeys = Boolean(process.env.TOSS_CLIENT_KEY && process.env.TOSS_SECRET_KEY);
     const devPayments = process.env.ALLOW_DEV_PAYMENTS === 'true' && process.env.NODE_ENV !== 'production';
     return [
@@ -73,8 +73,8 @@ function releaseStatus(req) {
         },
         {
             label: '배포 주소',
-            ready: /^https:\/\//.test(publicBaseUrl),
-            detail: publicBaseUrl
+            ready: /^https:\/\//.test(detectedPublicBaseUrl),
+            detail: detectedPublicBaseUrl
         }
     ];
 }

@@ -1,0 +1,67 @@
+services:
+  - type: web
+    name: kita-api
+    runtime: docker
+    rootDir: study-platform
+    dockerfilePath: Dockerfile
+    dockerContext: .
+    plan: starter
+    healthCheckPath: /api/live
+    disk:
+      name: kita-api-data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "true"
+      - key: STRICT_PRODUCTION_SECURITY
+        value: "true"
+      - key: ENFORCE_HTTPS
+        value: "true"
+      - key: ALLOW_DEV_PAYMENTS
+        value: "false"
+      - key: CORS_ORIGINS
+        value: https://kita-ec927.web.app,https://kita-ec927.firebaseapp.com
+      - key: STUDY_AI_BASE_URL
+        fromService:
+          type: web
+          name: kita-study-ai
+          property: hostport
+      - key: AI_API_PROVIDER
+        value: openai-compatible
+      - key: AI_API_BASE_URL
+        value: https://api.openai.com/v1
+      - key: AI_API_MODEL
+        value: gpt-4.1-mini
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_PIN
+        sync: false
+      - key: MONGO_URI
+        sync: false
+      - key: AI_API_KEY
+        sync: false
+
+  - type: web
+    name: kita-study-ai
+    runtime: docker
+    rootDir: study-ai
+    dockerfilePath: Dockerfile
+    dockerContext: .
+    plan: starter
+    healthCheckPath: /health
+    disk:
+      name: kita-study-ai-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: USE_MOCK_LLM
+        value: "true"
+      - key: LOCAL_LLM_MODEL
+        value: kita-study-ai
+      - key: STUDY_AI_DB_PATH
+        value: /data/study_ai.sqlite3
+      - key: CORS_ORIGINS
+        value: "*"

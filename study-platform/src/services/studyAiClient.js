@@ -1,4 +1,11 @@
-const STUDY_AI_BASE_URL = (process.env.STUDY_AI_BASE_URL || 'http://127.0.0.1:8002').replace(/\/$/, '');
+function normalizeBaseUrl(value) {
+    const raw = String(value || '').trim().replace(/\/$/, '');
+    if (!raw) return 'http://127.0.0.1:8002';
+    if (/^https?:\/\//i.test(raw)) return raw;
+    return `http://${raw}`;
+}
+
+const STUDY_AI_BASE_URL = normalizeBaseUrl(process.env.STUDY_AI_BASE_URL);
 
 function compactText(value) {
     return String(value || '').trim();

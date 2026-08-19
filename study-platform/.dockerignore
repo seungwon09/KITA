@@ -2,9 +2,12 @@ node_modules
 npm-debug.log
 .git
 .vscode
+.env
+.env.*
+data
+uploads/*
+!uploads/.gitkeep
 *.log
 cloudflared*.log
 server-debug*.log
-uploads/*
 data/*.tmp
-.env

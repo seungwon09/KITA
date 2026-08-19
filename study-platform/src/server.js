@@ -19,6 +19,7 @@ const qualityRoutes = require('./routes/quality');
 const auth = require('./middleware/auth');
 const {
     auditSecurityEvent,
+    publicBaseUrl,
     rejectDangerousInput,
     requireHttps,
     securityRequestContext,
@@ -91,7 +92,7 @@ app.use(cors({
     origin(origin, callback) {
         if (!origin) return callback(null, true);
         if (allowedOrigins.includes(origin)) return callback(null, true);
-        if (origin === process.env.PUBLIC_BASE_URL) return callback(null, true);
+        if (origin === publicBaseUrl()) return callback(null, true);
         if (isTemporaryTunnelOrigin(origin)) return callback(null, true);
         if (isPrivateDevelopmentOrigin(origin)) return callback(null, true);
         const error = new Error('CORS_ORIGIN_DENIED');
@@ -141,6 +142,15 @@ app.use('/api/admin', adminLimiter, adminRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/rewards', rewardRoutes);
 app.use('/api/quality', qualityRoutes);
+
+app.get('/api/live', (req, res) => {
+    res.json({
+        ok: true,
+        app: 'KITA',
+        service: 'web',
+        time: new Date().toISOString()
+    });
+});
 
 app.get('/api/protected', auth, (req, res) => {
     res.json({ ok: true, msg: 'Authenticated.', user: req.user });

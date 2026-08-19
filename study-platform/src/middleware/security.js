@@ -63,6 +63,14 @@ function securityRequestContext(req, res, next) {
     next();
 }
 
+function publicBaseUrl() {
+    const configured = String(process.env.PUBLIC_BASE_URL || '').trim();
+    if (configured) return configured.replace(/\/$/, '');
+    const renderHost = String(process.env.RENDER_EXTERNAL_HOSTNAME || '').trim();
+    if (renderHost) return `https://${renderHost}`.replace(/\/$/, '');
+    return '';
+}
+
 function requireHttps(req, res, next) {
     if (process.env.ENFORCE_HTTPS !== 'true') return next();
     const forwarded = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
@@ -115,7 +123,7 @@ function validateEnvironment() {
     const issues = [];
     if (String(process.env.JWT_SECRET || '').length < 48) issues.push('JWT_SECRET must be at least 48 characters.');
     if (String(process.env.ADMIN_PIN || '').length < 10) issues.push('ADMIN_PIN must be at least 10 characters.');
-    if (process.env.NODE_ENV === 'production' && !String(process.env.PUBLIC_BASE_URL || '').startsWith('https://')) issues.push('PUBLIC_BASE_URL must use HTTPS.');
+    if (process.env.NODE_ENV === 'production' && !publicBaseUrl().startsWith('https://')) issues.push('PUBLIC_BASE_URL must use HTTPS.');
     if (process.env.NODE_ENV === 'production' && !String(process.env.CORS_ORIGINS || '').trim()) issues.push('CORS_ORIGINS must be configured.');
     if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DEV_PAYMENTS === 'true') issues.push('ALLOW_DEV_PAYMENTS must be false in production.');
     if (issues.length) {
@@ -129,6 +137,7 @@ module.exports = {
     aiImageFileFilter,
     auditSecurityEvent,
     materialFileFilter,
+    publicBaseUrl,
     rejectDangerousInput,
     requireHttps,
     secureEqual,
