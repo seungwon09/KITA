@@ -1,4 +1,5 @@
-const admin = require('firebase-admin');
+const { applicationDefault, cert, getApps, initializeApp } = require('firebase-admin/app');
+const { getAuth } = require('firebase-admin/auth');
 
 let firebaseApp = null;
 let firebaseInitError = '';
@@ -30,15 +31,17 @@ function getFirebaseAdmin() {
     try {
         const serviceAccount = serviceAccountFromEnv();
         if (serviceAccount) {
-            firebaseApp = admin.initializeApp({
-                credential: admin.credential.cert(serviceAccount),
+            firebaseApp = initializeApp({
+                credential: cert(serviceAccount),
                 projectId: serviceAccount.projectId || value('FIREBASE_PROJECT_ID')
             });
         } else if (value('GOOGLE_APPLICATION_CREDENTIALS')) {
-            firebaseApp = admin.initializeApp({
-                credential: admin.credential.applicationDefault(),
+            firebaseApp = initializeApp({
+                credential: applicationDefault(),
                 projectId: value('FIREBASE_PROJECT_ID') || undefined
             });
+        } else if (getApps().length) {
+            firebaseApp = getApps()[0];
         }
         firebaseInitError = '';
         return firebaseApp;
@@ -86,7 +89,7 @@ async function verifyFirebaseIdToken(idToken) {
         err.code = 'FIREBASE_NOT_CONFIGURED';
         throw err;
     }
-    return admin.auth(app).verifyIdToken(String(idToken || ''), true);
+    return getAuth(app).verifyIdToken(String(idToken || ''), true);
 }
 
 module.exports = {
@@ -94,4 +97,3 @@ module.exports = {
     firebaseClientConfig,
     verifyFirebaseIdToken
 };
-
