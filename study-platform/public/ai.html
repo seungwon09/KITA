@@ -15,20 +15,17 @@
         <div class="panel">
             <div class="badge"><span class="dot"></span> 통합 AI</div>
             <h1>질문하면<br>KITA가 짧고 정확하게</h1>
-            <p class="muted">일반 질문, 문제 풀이, 그래프, 도형, 사진 인식을 한 화면에서 처리합니다.</p>
+            <p class="muted">글이나 사진으로 질문과 문제 풀이를 처리합니다.</p>
             <div class="toolbar" id="modeTabs">
                 <button id="tab-chat" class="btn primary" onclick="setMode('chat')">AI 질문</button>
                 <button id="tab-solve" class="btn ghost" onclick="setMode('solve')">문제 풀이</button>
-                <button id="tab-graph" class="btn ghost" onclick="setMode('graph')">그래프</button>
-                <button id="tab-geometry" class="btn ghost" onclick="setMode('geometry')">도형</button>
-                <button id="tab-image" class="btn ghost" onclick="setMode('image')">사진</button>
             </div>
             <div id="promptBox" class="field"><label id="promptLabel" for="prompt">AI에게 물어보기</label><textarea id="prompt" placeholder="질문이나 문제를 입력하세요."></textarea></div>
             <div class="row">
                 <div class="field"><label for="subject">과목</label><select id="subject"><option value="auto">자동</option><option value="math">수학</option><option value="science">과학</option><option value="mixed">수학·과학</option></select></div>
                 <div class="field"><label for="elapsed">풀이 시간</label><input id="elapsed" type="number" value="90" min="0"></div>
             </div>
-            <div id="imageBox" class="field" hidden><label for="image">문제/그래프/도형 사진</label><input id="image" type="file" accept="image/*"></div>
+            <div id="imageBox" class="field"><label for="image">사진 첨부</label><input id="image" type="file" accept="image/*"></div>
             <button class="btn primary" onclick="runMode()">실행</button>
         </div>
         <div class="panel" id="adminStatusPanel" hidden>
@@ -45,14 +42,11 @@ const history = [];
 const esc = value => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 function headers(json = true) { return { ...(json ? { 'Content-Type': 'application/json' } : {}), ...window.kitaAuthHeaders() }; }
 function setMode(next) {
-    mode = next;
-    ['chat', 'solve', 'graph', 'geometry', 'image'].forEach(name => document.getElementById(`tab-${name}`).className = `btn ${name === mode ? 'primary' : 'ghost'}`);
-    document.getElementById('promptBox').hidden = mode === 'image';
-    document.getElementById('imageBox').hidden = mode !== 'image';
-    document.getElementById('promptLabel').textContent = { chat: 'AI에게 물어보기', solve: '문제 입력', graph: '그래프 식 또는 설명', geometry: '도형 문제 또는 설명', image: '' }[mode];
-    document.getElementById('answer').innerHTML = mode === 'image'
-        ? '<div class="bubble">사진을 선택하고 실행을 눌러 주세요.</div>'
-        : '<div class="bubble">질문이나 문제를 입력하고 실행을 눌러 주세요.</div>';
+    mode = next === 'solve' ? 'solve' : 'chat';
+    ['chat', 'solve'].forEach(name => document.getElementById(`tab-${name}`).className = `btn ${name === mode ? 'primary' : 'ghost'}`);
+    document.getElementById('promptLabel').textContent = mode === 'solve' ? '문제 입력' : 'AI에게 물어보기';
+    document.getElementById('prompt').placeholder = mode === 'solve' ? '문제를 입력하거나 사진만 첨부하세요.' : '질문을 입력하거나 사진만 첨부하세요.';
+    document.getElementById('answer').innerHTML = '<div class="bubble">글을 입력하거나 사진을 첨부하고 실행을 눌러 주세요.</div>';
 }
 function card(title, body) {
     if (!body && body !== 0) return '';
@@ -102,15 +96,47 @@ async function api(path, body) {
     if (!res.ok) throw new Error(data.error || data.msg || '요청에 실패했습니다.');
     return data;
 }
+async function analyzePhoto({ file, text, subject, elapsed }) {
+    const uploadFile = await imageForUpload(file);
+    const form = new FormData();
+    form.append('image', uploadFile, uploadFile.name || file.name || 'problem.jpg');
+    form.append('graph_text', text || '');
+    form.append('subject', subject);
+    form.append('solveTime', String(elapsed || 0));
+    const res = await fetch('/api/ai/graph-image', { method: 'POST', headers: headers(false), body: form });
+    const raw = await res.text();
+    let data = {};
+    try { data = raw ? JSON.parse(raw) : {}; } catch (err) { data = { error: readableUploadError(raw) }; }
+    if (!res.ok && window.kitaHandleAuthError?.(res.status)) throw new Error('로그인이 필요합니다.');
+    if (!res.ok) throw new Error(data.error || '사진 분석 서버가 잠깐 불안정합니다. 다시 실행해 주세요.');
+    return data;
+}
+function photoAnswer(data) {
+    const verified = data.verifiedAnswer || data.analyze?.solve?.verified_answer || '';
+    const fast = data.fastSolution || data.shortcut || data.analyze?.solve?.fast_solution || '';
+    const basic = data.basicSolution || data.solution || data.analyze?.solve?.basic_solution || '';
+    const mistakes = data.wrongAnswerReasons || data.analyze?.solve?.wrong_answer_reasons || [];
+    const ocrText = data.ocr?.normalized_text || data.ocr?.extracted_text || data.ocr?.text || '';
+    const main = fast || data.conclusion || basic;
+    if (verified || fast || basic) {
+        return `<div class="toolbar">${verified ? `<span class="pill ok">정답 ${esc(verified)}</span>` : ''}<span class="pill">${esc(data.access?.planName || '사진 분석')}</span></div><div class="grid two">${card('인식한 문제', ocrText)}${card('빠른 풀이', fast || data.conclusion)}${card('기본 풀이', basic)}${card('주의할 점', data.warnings || mistakes || [])}</div>`;
+    }
+    return `<div class="grid two">${card('인식한 내용', ocrText)}${card('답변', main)}${card('핵심 분석', data.graph?.keyFeatures || data.geometry?.formulas || [])}${card('주의할 점', data.warnings || [])}</div>`;
+}
 async function runMode() {
     const text = document.getElementById('prompt').value.trim();
+    const file = document.getElementById('image').files[0];
     const subject = document.getElementById('subject').value;
     const elapsed = Number(document.getElementById('elapsed').value || 0);
     const answer = document.getElementById('answer');
-    if (!text && mode !== 'image') return answer.innerHTML = '<div class="notice">질문이나 문제를 입력해 주세요.</div>';
+    if (!text && !file) return answer.innerHTML = '<div class="notice">질문을 입력하거나 사진을 첨부해 주세요.</div>';
     answer.innerHTML = '<div class="bubble">생각 중...</div>';
     try {
-        if (mode === 'chat') {
+        if (file) {
+            answer.innerHTML = '<div class="bubble">사진을 읽고 답변을 만드는 중...</div>';
+            const data = await analyzePhoto({ file, text, subject, elapsed });
+            answer.innerHTML = photoAnswer(data);
+        } else if (mode === 'chat') {
             history.push({ role: 'user', content: text });
             const data = await api('/api/ai/chat', { message: text, subject, history });
             history.push({ role: 'assistant', content: data.reply });
@@ -120,33 +146,6 @@ async function runMode() {
             const data = await api('/api/ai/solve', { question: text, subject, solveTime: elapsed });
             answer.innerHTML = `<div class="toolbar">${data.verifiedAnswer ? `<span class="pill ok">정답 ${esc(data.verifiedAnswer)}</span>` : ''}<span class="pill">${esc(data.access?.planName || '')}</span></div><div class="grid two">${card('빠른 풀이', data.shortcut || data.fastSolution)}${card('기본 풀이', data.basicSolution || data.solution)}${data.eliteLocked ? card('상위권 풀이', '상급 풀이 요금제부터 사용할 수 있습니다.') : card('상위권 풀이', data.eliteSolution)}${card('주의할 실수', data.traps || [])}</div>`;
             if (data.apiWarning) answer.insertAdjacentHTML('afterbegin', `<div class="notice">외부 API가 일시적으로 막혀 기존 KITA 엔진으로 풀이했습니다. 결제/크레딧 설정을 확인해 주세요.</div>`);
-        } else if (mode === 'graph') {
-            const data = await api('/api/ai/graph', { graph_text: text, subject });
-            answer.innerHTML = `<div class="grid two">${card('결론', data.conclusion)}${card('핵심 지점', data.keyFeatures || [])}${card('풀이 순서', data.solutionSteps || [])}${card('주의점', data.warnings || [])}</div>`;
-        } else if (mode === 'geometry') {
-            const data = await api('/api/ai/geometry', { geometry_text: text, subject });
-            answer.innerHTML = `<div class="grid two">${card('결론', data.conclusion)}${card('공식', data.formulas || [])}${card('계산 순서', data.steps || [])}${card('주의점', data.mistakes || [])}</div>`;
-        } else {
-            const file = document.getElementById('image').files[0];
-            if (!file) throw new Error('사진을 먼저 선택해 주세요.');
-            answer.innerHTML = '<div class="bubble">사진을 정리해서 분석 중...</div>';
-            const uploadFile = await imageForUpload(file);
-            const form = new FormData();
-            form.append('image', uploadFile, uploadFile.name || file.name || 'problem.jpg');
-            form.append('graph_text', '');
-            form.append('subject', subject);
-            const res = await fetch('/api/ai/graph-image', { method: 'POST', headers: headers(false), body: form });
-            const raw = await res.text();
-            let data = {};
-            try { data = raw ? JSON.parse(raw) : {}; } catch (err) { data = { error: readableUploadError(raw) }; }
-            if (!res.ok && window.kitaHandleAuthError?.(res.status)) throw new Error('로그인이 필요합니다.');
-            if (!res.ok) throw new Error(data.error || '사진 분석 서버가 잠깐 불안정합니다. 다시 실행해 주세요.');
-            const verified = data.verifiedAnswer || data.analyze?.solve?.verified_answer || '';
-            const fast = data.fastSolution || data.shortcut || data.analyze?.solve?.fast_solution || '';
-            const basic = data.basicSolution || data.solution || data.analyze?.solve?.basic_solution || '';
-            const mistakes = data.wrongAnswerReasons || data.analyze?.solve?.wrong_answer_reasons || [];
-            answer.innerHTML = `<div class="toolbar">${verified ? `<span class="pill ok">정답 ${esc(verified)}</span>` : ''}<span class="pill">${esc(data.access?.planName || '사진 분석')}</span></div><div class="grid two">${card('인식한 문제', data.ocr?.normalized_text || data.ocr?.extracted_text || '')}${card('빠른 풀이', fast || data.conclusion)}${card('기본 풀이', basic)}${card('주의할 점', data.warnings || mistakes || [])}</div>`;
-            if (!verified && (data.graph || data.geometry)) answer.insertAdjacentHTML('beforeend', `<div class="grid two">${card('그래프 분석', data.graph?.keyFeatures || [])}${card('도형 분석', data.geometry?.formulas || [])}</div>`);
         }
     } catch (err) {
         answer.innerHTML = `<div class="notice">${esc(err.message)}</div>`;
@@ -154,7 +153,7 @@ async function runMode() {
 }
 function applyHashMode() {
     const hashMode = location.hash.replace('#', '');
-    if (['chat', 'solve', 'graph', 'geometry', 'image'].includes(hashMode)) setMode(hashMode);
+    setMode(hashMode === 'solve' ? 'solve' : 'chat');
 }
 applyHashMode();
 window.addEventListener('hashchange', applyHashMode);
