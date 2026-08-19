@@ -112,6 +112,8 @@ app.use(express.json({ limit: '4mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb', parameterLimit: 100 }));
 
 const protectedPages = new Set([
+    '/',
+    '/index.html',
     '/ai.html',
     '/solve.html',
     '/upload.html',

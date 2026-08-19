@@ -19,6 +19,8 @@
 
     function isProtectedPath(path) {
         return [
+            '/',
+            '/index.html',
             '/ai.html',
             '/solve.html',
             '/upload.html',
