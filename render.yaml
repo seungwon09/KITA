@@ -27,10 +27,7 @@ services:
       - key: CORS_ORIGINS
         value: https://kita-ec927.web.app,https://kita-ec927.firebaseapp.com
       - key: STUDY_AI_BASE_URL
-        fromService:
-          type: web
-          name: kita-study-ai
-          property: hostport
+        value: https://kita-study-ai.onrender.com
       - key: AI_API_PROVIDER
         value: openai-compatible
       - key: AI_API_BASE_URL
