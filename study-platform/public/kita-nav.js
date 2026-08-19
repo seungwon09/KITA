@@ -74,8 +74,13 @@
     window.kitaFormatMath = function (value) {
         const escape = String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
         return escape
+            .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+            .replace(/`([^`\n]+)`/g, '<code>$1</code>')
             .replace(/\\\[([\s\S]*?)\\\]/g, (_, formula) => `<span class="formula">${formatFormula(formula)}</span>`)
             .replace(/\\\(([\s\S]*?)\\\)/g, (_, formula) => `<span class="formula-inline">${formatFormula(formula)}</span>`)
+            .replace(/\bd2\/dt2\b/g, 'd<sup>2</sup>/dt<sup>2</sup>')
+            .replace(/\br3\b/g, 'r<sup>3</sup>')
+            .replace(/\bv02\b/g, 'v<sub>0</sub><sup>2</sup>')
             .replace(/([A-Za-z0-9가-힣)])\^(-?\d+)/g, '$1<sup>$2</sup>')
             .replace(/x²/g, 'x<sup>2</sup>')
             .replace(/x³/g, 'x<sup>3</sup>')

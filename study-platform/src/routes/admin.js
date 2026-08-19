@@ -39,6 +39,40 @@ function publicMaterial(item) {
     return { ...item, localPath: undefined, searchText: undefined };
 }
 
+function releaseStatus(req) {
+    const rootDir = path.resolve(__dirname, '../../..');
+    const publicBaseUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
+    const hasTossKeys = Boolean(process.env.TOSS_CLIENT_KEY && process.env.TOSS_SECRET_KEY);
+    const devPayments = process.env.ALLOW_DEV_PAYMENTS === 'true' && process.env.NODE_ENV !== 'production';
+    return [
+        {
+            label: 'Git 저장소',
+            ready: fs.existsSync(path.join(rootDir, '.git')),
+            detail: '코드 되돌리기와 백업 기준점'
+        },
+        {
+            label: 'AI API',
+            ready: Boolean(process.env.AI_API_KEY || process.env.OPENAI_API_KEY),
+            detail: process.env.AI_API_MODEL || '모델 설정 대기'
+        },
+        {
+            label: '카카오 로그인',
+            ready: Boolean(process.env.KAKAO_REST_API_KEY),
+            detail: process.env.KAKAO_REST_API_KEY ? '개발자 키 연결됨' : 'REST API 키 입력 필요'
+        },
+        {
+            label: '결제',
+            ready: hasTossKeys || devPayments,
+            detail: hasTossKeys ? '토스 키 연결됨' : devPayments ? '개발모드 테스트 가능' : '토스 키 또는 개발모드 필요'
+        },
+        {
+            label: '배포 주소',
+            ready: /^https:\/\//.test(publicBaseUrl),
+            detail: publicBaseUrl
+        }
+    ];
+}
+
 function parseCsvLine(line) {
     const values = [];
     let value = '';
@@ -102,7 +136,7 @@ async function normalizeMaterial(body, file, overrides = {}) {
 router.get('/status', requireAdmin, (req, res) => res.json({ ok: true, ...metrics(loadStore()), adminProtection: 'ADMIN_PIN' }));
 router.get('/dashboard', requireAdmin, (req, res) => {
     const store = loadStore();
-    res.json({ ok: true, metrics: metrics(store), latestRun: store.benchmarkRuns[0] || null, recentFailures: store.failureCases.filter(item => item.status === 'open').slice(0, 30), recentCases: store.benchmarkCases.slice(-20).reverse() });
+    res.json({ ok: true, metrics: metrics(store), releaseStatus: releaseStatus(req), latestRun: store.benchmarkRuns[0] || null, recentFailures: store.failureCases.filter(item => item.status === 'open').slice(0, 30), recentCases: store.benchmarkCases.slice(-20).reverse() });
 });
 router.get('/library', requireAdmin, (req, res) => {
     const store = loadStore();

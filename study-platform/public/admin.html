@@ -20,6 +20,10 @@
     <section id="adminPanel" hidden>
         <div class="admin-head"><div><div class="badge"><span class="dot"></span> 정확도 개선 센터</div><h1>KITA 관리자</h1></div><button class="btn ghost" onclick="lockAdmin()">잠금</button></div>
         <div class="metric-strip" id="metrics"></div>
+        <div class="panel admin-gap">
+            <div class="section-head"><div><h2>출시 준비 상태</h2><p class="muted">사업자등록 전에도 준비할 수 있는 연결 상태입니다.</p></div></div>
+            <div class="grid" id="releaseStatus"></div>
+        </div>
         <div class="admin-tabs">
             <button class="admin-tab active" data-view="library" onclick="showView('library')">문제집·답지</button>
             <button class="admin-tab" data-view="quality" onclick="showView('quality')">자동 채점</button>
@@ -94,9 +98,19 @@ function renderMetrics(value) {
     const cards = [['검증 문제', value.benchmarkCases || 0], ['최근 정확도', value.latestAccuracy == null ? '-' : `${value.latestAccuracy}%`], ['개선 대기', value.openFailures || 0], ['등록 자료', value.materials || 0]];
     document.getElementById('metrics').innerHTML = cards.map(([label, number]) => `<div class="metric-box"><span>${label}</span><strong>${number}</strong></div>`).join('');
 }
+function renderReleaseStatus(items) {
+    document.getElementById('releaseStatus').innerHTML = (items || []).map(item => `
+        <article class="card">
+            <span class="pill ${item.ready ? 'ok' : 'bad'}">${item.ready ? '준비됨' : '대기'}</span>
+            <h3>${esc(item.label)}</h3>
+            <p class="muted">${esc(item.detail)}</p>
+        </article>
+    `).join('');
+}
 async function loadDashboard() {
     const data = await fetch('/api/admin/dashboard', { headers: headers(false) }).then(res => res.json());
     renderMetrics(data.metrics || {});
+    renderReleaseStatus(data.releaseStatus || []);
     document.getElementById('failureList').innerHTML = (data.recentFailures || []).map(item => `<article class="list-item"><div><span class="pill bad">${esc(item.category)}</span><h3>${esc(item.question)}</h3><p class="muted">정답: ${esc(item.expectedAnswer)} · AI: ${esc(item.actualAnswer || '없음')}</p></div><button class="btn ghost" onclick="resolveFailure('${item.id}')">처리 완료</button></article>`).join('') || '<div class="empty-state">현재 개선 대기 문제가 없습니다.</div>';
 }
 async function loadLibrary() {
