@@ -243,18 +243,22 @@ router.post('/graph-image', limit('ocr'), upload.single('image'), async (req, re
         const visionText = vision?.ok ? clean(vision.extractedText, 6000) : '';
         const combined = [req.body?.graph_text, visionText, ocrText].filter(Boolean).join('\n');
         const graph = graphAnalysis(combined), geometry = geometryAnalysis(combined);
+        const visionConfidence = vision?.ok ? Number(vision.confidence || 0.75) : 0;
+        const visionIsStrong = vision?.ok && visionConfidence >= 0.65 && (vision.verifiedAnswer || vision.basicSolution || vision.fastSolution || visionText);
+        const ocrWarnings = visionIsStrong
+            ? (ocr.warnings || []).filter(item => !/과목 자동|사진 인식 결과|숫자와 기호|질문 문장/.test(item))
+            : (ocr.warnings || []);
         const warnings = [
             fallbackWarning,
             vision?.ok ? '' : vision?.error ? `비전 분석 보조 실패: ${clean(vision.error, 140)}` : '',
             ...photoCrossCheckWarnings(ocrText, visionText),
             ...(vision?.ok ? vision.warnings || [] : []),
-            bundle.warning,
-            ...(ocr.warnings || []),
-            '사진 속 숫자와 기호는 한 번 확인해 주세요.'
+            visionIsStrong ? '' : bundle.warning,
+            ...ocrWarnings,
+            visionIsStrong ? '' : '사진 속 숫자와 기호는 한 번 확인해 주세요.'
         ].filter(Boolean);
         if (vision?.ok && (vision.verifiedAnswer || vision.basicSolution || vision.fastSolution || visionText)) {
             const preferredText = visionText || ocrText;
-            const visionConfidence = Number(vision.confidence || 0.75);
             if (visionConfidence >= 0.45 || !solve) {
                 return res.json({
                     ok: true,
