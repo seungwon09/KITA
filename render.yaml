@@ -22,6 +22,8 @@ services:
         value: "true"
       - key: ALLOW_DEV_PAYMENTS
         value: "false"
+      - key: PUBLIC_BASE_URL
+        value: https://kita-api-czgp.onrender.com
       - key: CORS_ORIGINS
         value: https://kita-ec927.web.app,https://kita-ec927.firebaseapp.com
       - key: STUDY_AI_BASE_URL

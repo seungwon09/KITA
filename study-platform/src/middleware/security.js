@@ -66,6 +66,8 @@ function securityRequestContext(req, res, next) {
 function publicBaseUrl() {
     const configured = String(process.env.PUBLIC_BASE_URL || '').trim();
     if (configured) return configured.replace(/\/$/, '');
+    const renderUrl = String(process.env.RENDER_EXTERNAL_URL || '').trim();
+    if (renderUrl) return renderUrl.replace(/\/$/, '');
     const renderHost = String(process.env.RENDER_EXTERNAL_HOSTNAME || '').trim();
     if (renderHost) return `https://${renderHost}`.replace(/\/$/, '');
     return '';
