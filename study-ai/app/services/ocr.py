@@ -75,37 +75,59 @@ class OcrService:
         from pytesseract import Output
 
         image = Image.open(io.BytesIO(image_bytes))
-        config = "--oem 3 --psm 6"
-        try:
-            data = pytesseract.image_to_data(image, lang="kor+eng", config=config, output_type=Output.DICT)
-        except pytesseract.TesseractError:
-            data = pytesseract.image_to_data(image, lang="eng", config=config, output_type=Output.DICT)
-        lines: dict[tuple[int, int, int], list[str]] = {}
-        confidences: list[float] = []
-        for index, token in enumerate(data.get("text", [])):
-            value = str(token).strip()
-            if not value:
-                continue
+        configs = [
+            ("psm6_block", "--oem 3 --psm 6 -c preserve_interword_spaces=1"),
+            ("psm4_column", "--oem 3 --psm 4 -c preserve_interword_spaces=1"),
+            ("psm11_sparse", "--oem 3 --psm 11 -c preserve_interword_spaces=1"),
+            ("psm12_sparse_osd", "--oem 3 --psm 12 -c preserve_interword_spaces=1"),
+        ]
+        best: dict[str, Any] | None = None
+        for config_name, config in configs:
             try:
-                confidence = float(data["conf"][index])
-            except (KeyError, TypeError, ValueError):
-                confidence = -1
-            if confidence >= 0:
-                confidences.append(confidence / 100)
-            key = (
-                int(data.get("block_num", [0])[index]),
-                int(data.get("par_num", [0])[index]),
-                int(data.get("line_num", [0])[index]),
+                data = pytesseract.image_to_data(image, lang="kor+eng", config=config, output_type=Output.DICT)
+            except pytesseract.TesseractError:
+                data = pytesseract.image_to_data(image, lang="eng", config=config, output_type=Output.DICT)
+            lines: dict[tuple[int, int, int], list[tuple[int, str]]] = {}
+            confidences: list[float] = []
+            for index, token in enumerate(data.get("text", [])):
+                value = str(token).strip()
+                if not value:
+                    continue
+                try:
+                    confidence = float(data["conf"][index])
+                except (KeyError, TypeError, ValueError):
+                    confidence = -1
+                if confidence >= 0:
+                    confidences.append(confidence / 100)
+                key = (
+                    int(data.get("block_num", [0])[index]),
+                    int(data.get("par_num", [0])[index]),
+                    int(data.get("line_num", [0])[index]),
+                )
+                left = int(data.get("left", [0])[index])
+                lines.setdefault(key, []).append((left, value))
+            raw_text = "\n".join(
+                " ".join(value for _, value in sorted(tokens, key=lambda item: item[0]))
+                for _, tokens in sorted(lines.items(), key=lambda item: item[0])
             )
-            lines.setdefault(key, []).append(value)
-        raw_text = "\n".join(" ".join(tokens) for tokens in lines.values())
-        confidence = sum(confidences) / len(confidences) if confidences else 0.0
-        return {
+            confidence = sum(confidences) / len(confidences) if confidences else 0.0
+            candidate = {
+                "engine": "tesseract",
+                "variant": f"{variant_name}:{config_name}",
+                "raw_text": raw_text,
+                "confidence": round(confidence, 3),
+                "line_count": len(lines),
+            }
+            candidate["score"] = self._candidate_score(candidate["raw_text"], candidate["confidence"])
+            if best is None or candidate["score"] > best["score"]:
+                best = candidate
+        return best or {
             "engine": "tesseract",
             "variant": variant_name,
-            "raw_text": raw_text,
-            "confidence": round(confidence, 3),
-            "line_count": len(lines),
+            "raw_text": "",
+            "confidence": 0.0,
+            "line_count": 0,
+            "score": 0.0,
         }
 
     def _build_image_variants(self, image_bytes: bytes) -> tuple[list[tuple[str, bytes]], dict[str, Any]]:
@@ -119,16 +141,24 @@ class OcrService:
             auto = ImageOps.autocontrast(gray)
             quality.update({"width": image.width, "height": image.height})
             quality.update(self._image_features(auto))
-            scale = 2 if max(image.width, image.height) < 2200 else 1
+            scale = 3 if max(image.width, image.height) < 1100 else 2 if max(image.width, image.height) < 2200 else 1
             upscaled = auto.resize((image.width * scale, image.height * scale), Image.Resampling.LANCZOS)
             clean = ImageEnhance.Contrast(upscaled).enhance(1.8)
             clean = ImageEnhance.Sharpness(clean).enhance(1.6)
-            threshold = clean.point(lambda pixel: 255 if pixel > 170 else 0)
+            high_contrast = ImageEnhance.Contrast(upscaled).enhance(2.6)
+            inverted = ImageOps.invert(auto)
+            threshold_soft = clean.point(lambda pixel: 255 if pixel > 145 else 0)
+            threshold_hard = clean.point(lambda pixel: 255 if pixel > 185 else 0)
+            graph_friendly = ImageEnhance.Sharpness(ImageEnhance.Contrast(auto).enhance(2.2)).enhance(2.0)
             variants.extend(
                 [
                     ("gray_autocontrast", self._to_png_bytes(auto)),
                     ("upscale_contrast_sharp", self._to_png_bytes(clean)),
-                    ("binary_threshold", self._to_png_bytes(threshold)),
+                    ("high_contrast", self._to_png_bytes(high_contrast)),
+                    ("binary_threshold_soft", self._to_png_bytes(threshold_soft)),
+                    ("binary_threshold_hard", self._to_png_bytes(threshold_hard)),
+                    ("inverted", self._to_png_bytes(inverted)),
+                    ("graph_line_sharp", self._to_png_bytes(graph_friendly)),
                 ]
             )
         except Exception as exc:
@@ -227,21 +257,31 @@ class OcrService:
             normalized = normalized.replace(source, target)
         normalized = re.sub(r"\bminimum\s*value\??", "최솟값", normalized, flags=re.IGNORECASE)
         normalized = re.sub(r"\bmaximum\s*value\??", "최댓값", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"\bmax(?:imum)?\s*height\??", "최대높이", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"\bfind\s+(?:the\s+)?", "구하시오 ", normalized, flags=re.IGNORECASE)
         if normalized != before:
             corrections.append("수식 기호와 윗첨자를 정리했습니다.")
         before = normalized
         normalized = re.sub(r"\s*([=+\-*/^(),:])\s*", r"\1", normalized)
+        normalized = re.sub(r"(?<=\d)\s+(?=[A-Za-z가-힣])", "", normalized)
+        normalized = re.sub(r"(?<=[가-힣])\s+(?=\d)", " ", normalized)
         normalized = re.sub(r"이\s*차\s*함\s*수", "이차함수", normalized)
         normalized = normalized.replace("최소값", "최솟값").replace("최대값", "최댓값")
+        normalized = normalized.replace("최대 높이", "최대높이")
         normalized = re.sub(r"(?<![A-Za-z])([xX])\s*[Aa]\s*2\b", r"\1^2", normalized)
         normalized = re.sub(r"(?<![A-Za-z])([xX])2(?=[+\-=)]|$|\s)", r"\1^2", normalized)
+        normalized = re.sub(r"(?<![A-Za-z])([xyXY])\s*[∧^]\s*([0-9])", r"\1^\2", normalized)
         normalized = re.sub(r"([xy])\s*\^\s*(\d+)", r"\1^\2", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"([xy])\^(\d)(?=\d*x)", r"\1^\2-", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"([xy])\^2(\d+(?:\.\d+)?)x", r"\1^2-\2x", normalized, flags=re.IGNORECASE)
         normalized = re.sub(r"\bf\s*\(\s*x\s*\)", "f(x)", normalized, flags=re.IGNORECASE)
-        normalized = re.sub(r"(?<![A-Za-z])m\s*/\s*s\s*\^?\s*2\b", "m/s^2", normalized, flags=re.IGNORECASE)
-        normalized = re.sub(r"(?<![A-Za-z])g\s*/\s*cm\s*\^?\s*3\b", "g/cm^3", normalized, flags=re.IGNORECASE)
-        normalized = re.sub(r"(?<![A-Za-z])cm\s*\^?\s*3\b", "cm^3", normalized, flags=re.IGNORECASE)
-        normalized = re.sub(r"(?<![A-Za-z])cm\s*\^?\s*2\b", "cm^2", normalized, flags=re.IGNORECASE)
-        normalized = re.sub(r"(?<![A-Za-z])m\s*\^?\s*2\b", "m^2", normalized, flags=re.IGNORECASE)
+        unit_end = r"(?=$|[^A-Za-z0-9])"
+        normalized = re.sub(r"(?<![A-Za-z])m\s*/\s*s\s*\^?\s*2" + unit_end, "m/s^2", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"(?<![A-Za-z])m\s*/\s*s2" + unit_end, "m/s^2", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"(?<![A-Za-z])g\s*/\s*cm\s*\^?\s*3" + unit_end, "g/cm^3", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"(?<![A-Za-z])cm\s*\^?\s*3" + unit_end, "cm^3", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"(?<![A-Za-z])cm\s*\^?\s*2" + unit_end, "cm^2", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"(?<![A-Za-z])m\s*\^?\s*2" + unit_end, "m^2", normalized, flags=re.IGNORECASE)
         normalized = re.sub(r"\bP\s*=\s*V\s*I\b", "P=VI", normalized, flags=re.IGNORECASE)
         normalized = re.sub(r"\bV\s*=\s*I\s*R\b", "V=IR", normalized, flags=re.IGNORECASE)
         normalized = re.sub(r"\bx\^2\s+(\d+(?:\.\d+)?)\s*x\b", r"x^2-\1x", normalized, flags=re.IGNORECASE)
@@ -251,14 +291,29 @@ class OcrService:
         normalized = re.sub(r"(?<=[=+\-*/(^])O(?=\d|\b)", "0", normalized)
         normalized = re.sub(r"(?<=\d)O(?=\d|[+\-*/)]|$)", "0", normalized)
         normalized = re.sub(r"(?<=[=+\-*/(^])(?:I|l)(?=\d|\b)", "1", normalized)
+        normalized = re.sub(r"(?<=\d)(?:I|l)(?=\d|[+\-*/)]|$)", "1", normalized)
+        normalized = re.sub(r"(?<=\d)S(?=\d|[+\-*/)]|$)", "5", normalized)
+        normalized = re.sub(r"(?<=\d)B(?=\d|[+\-*/)]|$)", "8", normalized)
+        normalized = re.sub(r"\b([Ff])\s*[=:]\s*([Mm])\s*[Aa]\b", "F=ma", normalized)
         if "=" in normalized and "x" not in normalized.lower():
             normalized = re.sub(r"(?<=\d)%(?=[+\-=])", "x", normalized)
+        normalized = self._repair_equation_lines(normalized)
         normalized = re.sub(r"[ \t]+", " ", normalized)
         normalized = re.sub(r"\n\s+", "\n", normalized)
         normalized = re.sub(r"\n{3,}", "\n\n", normalized).strip(" .,")
         if normalized != before:
             corrections.append("OCR 문자와 수식 간격을 보정했습니다.")
         return normalized, corrections
+
+    def _repair_equation_lines(self, text: str) -> str:
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        repaired: list[str] = []
+        for line in lines or [text]:
+            line = re.sub(r"([+\-=])\s*([+\-=])+", r"\1", line)
+            line = re.sub(r"(?<=\d)\*([xy])", r"\1", line, flags=re.IGNORECASE)
+            line = re.sub(r"(?<=\d)\s+([xy])", r"\1", line, flags=re.IGNORECASE)
+            repaired.append(line)
+        return "\n".join(repaired)
 
     def _recognize_problem(self, text: str) -> dict[str, Any]:
         subject = self._detect_subject(text)
@@ -279,6 +334,8 @@ class OcrService:
                 unit = "물리/전기"
             elif any(word in text for word in ["힘", "가속도", "F=ma", "속력", "거리"]):
                 unit = "물리/힘과 운동"
+            elif any(word in text for word in ["던지", "수직방향", "최대높이", "중력가속도", "포물선"]):
+                unit = "물리/역학"
             elif any(word in text for word in ["열량", "비열", "온도 변화"]):
                 unit = "물리/열"
             elif any(word in text for word in ["파동", "파장", "진동수"]):
@@ -299,8 +356,8 @@ class OcrService:
         }
 
     def _detect_subject(self, text: str) -> str:
-        science_words = ["질량", "가속도", "힘", "전압", "전류", "전력", "저항", "속력", "거리", "파동", "몰", "열량", "F=ma", "P=VI", "V=IR", "kg", "m/s"]
-        math_words = ["함수", "방정식", "최솟값", "최댓값", "확률", "평균", "연립", "x^2", "f(x)"]
+        science_words = ["질량", "가속도", "힘", "전압", "전류", "전력", "저항", "속력", "속도", "거리", "높이", "중력", "던지", "파동", "몰", "열량", "F=ma", "P=VI", "V=IR", "kg", "m/s", "N", "J"]
+        math_words = ["함수", "방정식", "최솟값", "최댓값", "확률", "평균", "연립", "그래프", "좌표", "기울기", "x^2", "f(x)"]
         science_score = sum(word in text for word in science_words)
         math_score = sum(word in text for word in math_words)
         if science_score > math_score:
@@ -316,6 +373,8 @@ class OcrService:
             r"[FPVIRW]=[A-Za-z0-9*/^+\-()]+",
             r"-?\d*x\^2[+\-]\d*x[+\-]\d+",
             r"\d*x[+\-]\d+=\d+",
+            r"v\^2=v_?0\^2[+\-]2a[sh]",
+            r"h=v_?0t[+\-]\d+(?:\.\d+)?t\^2",
             r"\d+(?:\.\d+)?\s*(?:kg|N|V|A|W|Ω|m/s\^2|m/s|J|Pa|mol|g/mol|cm\^3|cm\^2|m\^2|L|mL)",
         ]
         formulas: list[str] = []
@@ -335,6 +394,11 @@ class OcrService:
             warnings.append("사진 해상도가 낮습니다.")
         if quality.get("contrast", 99) < 16:
             warnings.append("사진 대비가 낮습니다.")
+        visual = quality.get("visual_features", {})
+        if visual.get("likely_graph") and not recognition["formula_candidates"]:
+            warnings.append("그래프/표처럼 보이지만 축 숫자 인식이 부족합니다.")
+        if visual.get("likely_geometry") and len(recognition["numbers"]) < 2:
+            warnings.append("도형처럼 보이지만 길이 숫자 인식이 부족합니다.")
         if not any(word in text for word in ["구하", "계산", "설명", "값", "얼마"]):
             warnings.append("질문 문장이 잘렸는지 확인해 주세요.")
         return warnings
@@ -357,7 +421,15 @@ class OcrService:
         score += 0.08 if recognition["unit"] != "미분류" else 0
         score += 0.10 if recognition["formula_candidates"] else 0
         score += 0.05 if recognition["numbers"] else 0
+        score += 0.05 if any(word in normalized for word in ["구하", "계산", "최솟값", "최댓값", "얼마"]) else 0
+        score -= 0.10 if self._garbage_ratio(normalized) > 0.28 else 0
         return score
+
+    def _garbage_ratio(self, text: str) -> float:
+        if not text:
+            return 1.0
+        useful = sum(1 for ch in text if ch.isalnum() or ch.isspace() or ch in "가나다라마바사아자차카타파하거너더러머버서어저처커터퍼허고노도로모보소오조초코토포호구누두루무부수우주추쿠투푸후그느드르므브스으즈츠크트프흐기니디리미비시이지치키티피히+-=*/^().,?:%Ω")
+        return 1 - useful / len(text)
 
     def _needs_review(self, confidence: float, warnings: list[str], recognition: dict[str, Any]) -> bool:
         return confidence < 0.72 or recognition["subject"] == "unknown" or len(warnings) >= 3

@@ -1,7 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const { checkStudyAiHealth, requestMultipart, requestStudyAi, solveWithStudyAi } = require('../services/studyAiClient');
-const { askExternalAi, externalAiStatus, solveWithExternalAi } = require('../services/externalAiClient');
+const { askExternalAi, externalAiStatus, solveWithExternalAi, solvePhotoWithExternalAi } = require('../services/externalAiClient');
 const { addFailure, answerMatches } = require('../services/qualityStore');
 const { consume } = require('../services/plans');
 const auth = require('../middleware/auth');
@@ -19,6 +19,23 @@ const clean = (value, max = 8000) => String(value || '').trim().slice(0, max);
 const subject = req => ['math', 'science', 'mixed', 'auto'].includes(req.body?.subject) ? req.body.subject : 'auto';
 const fmt = value => Number.isInteger(value) ? String(value) : String(Number(value.toFixed(4)));
 const studyAiPlan = planId => ({ free: 'free', middle: 'basic', advanced: 'pro', ultimate: 'premium' }[planId] || 'free');
+const extractNumbers = value => [...clean(value, 8000).matchAll(/-?\d+(?:\.\d+)?/g)].map(item => item[0]).slice(0, 12);
+
+function photoCrossCheckWarnings(ocrText, visionText) {
+    if (!ocrText || !visionText) return [];
+    const warnings = [];
+    const ocrNumbers = extractNumbers(ocrText);
+    const visionNumbers = extractNumbers(visionText);
+    const missing = ocrNumbers.filter(item => !visionNumbers.includes(item));
+    const added = visionNumbers.filter(item => !ocrNumbers.includes(item));
+    if (ocrNumbers.length && visionNumbers.length && (missing.length || added.length)) {
+        warnings.push('OCR과 비전 분석의 숫자 인식이 달라 핵심 숫자를 재검토했습니다.');
+    }
+    const ocrHasFormula = /[xy]\^?\d|[A-Z]=|=/.test(ocrText);
+    const visionHasFormula = /[xy]\^?\d|[A-Z]=|=/.test(visionText);
+    if (ocrHasFormula !== visionHasFormula) warnings.push('수식/등호 인식이 후보별로 달라 비전 분석 결과를 우선 반영했습니다.');
+    return warnings;
+}
 
 function appendUploadedImage(form, file) {
     form.append(
@@ -132,13 +149,25 @@ router.post('/ocr', limit('ocr'), upload.single('image'), async (req, res) => {
 router.post('/graph-image', limit('ocr'), upload.single('image'), async (req, res) => {
     if (!req.file) return res.status(400).json({ ok: false, error: '이미지 파일이 없습니다.' });
     try {
+        const requestedSubject = subject(req);
+        const elapsedSeconds = Number(req.body?.solveTime || req.body?.elapsed_seconds || 0) || 0;
+        const visionPromise = externalAiStatus().enabled
+            ? solvePhotoWithExternalAi({
+                imageBuffer: req.file.buffer,
+                mimeType: req.file.mimetype,
+                userText: clean(req.body?.graph_text || req.body?.question || '', 2000),
+                subject: requestedSubject,
+                elapsedSeconds,
+                studentLevel: clean(req.body?.student_level || 'intermediate', 80)
+            }).catch(err => ({ ok: false, error: err.message }))
+            : Promise.resolve(null);
         const form = new FormData();
         appendUploadedImage(form, req.file);
         form.append('user_id', req.user?.email || clean(req.body?.user_id || 'kita-user', 120));
-        form.append('subject', subject(req));
+        form.append('subject', requestedSubject);
         form.append('plan', studyAiPlan(req.kitaAccess?.plan?.id));
         form.append('student_level', clean(req.body?.student_level || 'intermediate', 80));
-        form.append('elapsed_seconds', String(Number(req.body?.solveTime || req.body?.elapsed_seconds || 0) || 0));
+        form.append('elapsed_seconds', String(elapsedSeconds));
         form.append('auto_solve', 'true');
         let bundle = null;
         let fallbackWarning = '';
@@ -146,15 +175,50 @@ router.post('/graph-image', limit('ocr'), upload.single('image'), async (req, re
             bundle = await requestMultipart('/app-ai/mobile/ocr-analyze', form, { timeoutMs: 90000 });
         } catch (err) {
             fallbackWarning = err.message;
-            const ocrForm = new FormData();
-            appendUploadedImage(ocrForm, req.file);
-            const ocrOnly = await requestMultipart('/ocr', ocrForm, { timeoutMs: 70000 });
+            let ocrOnly = null;
+            try {
+                const ocrForm = new FormData();
+                appendUploadedImage(ocrForm, req.file);
+                ocrOnly = await requestMultipart('/ocr', ocrForm, { timeoutMs: 70000 });
+            } catch (ocrErr) {
+                const visionOnly = await visionPromise;
+                if (visionOnly?.ok) {
+                    const visionText = clean(visionOnly.extractedText, 6000);
+                    const graph = graphAnalysis(visionText), geometry = geometryAnalysis(visionText);
+                    return res.json({
+                        ok: true,
+                        type: 'photo_vision_solution',
+                        ocr: {
+                            extracted_text: visionText,
+                            normalized_text: visionText,
+                            confidence: visionOnly.confidence || 0.72,
+                            detected_subject: visionOnly.analysis?.detected_subject || requestedSubject,
+                            detected_unit: visionOnly.analysis?.detected_unit || '',
+                            problem_type: visionOnly.analysis?.problem_type || '',
+                            warnings: ['OCR 서버가 불안정해서 비전 분석으로 처리했습니다.']
+                        },
+                        vision: visionOnly,
+                        graph,
+                        geometry,
+                        verifiedAnswer: visionOnly.verifiedAnswer || '',
+                        solution: visionOnly.basicSolution || visionOnly.fastSolution || visionOnly.graphSummary || visionOnly.geometrySummary || '',
+                        shortcut: visionOnly.fastSolution || '',
+                        basicSolution: visionOnly.basicSolution || '',
+                        fastSolution: visionOnly.fastSolution || '',
+                        wrongAnswerReasons: visionOnly.warnings || [],
+                        conclusion: visionOnly.verifiedAnswer ? `정답은 ${visionOnly.verifiedAnswer}입니다.` : visionOnly.fastSolution || visionOnly.basicSolution || graph.conclusion || geometry.conclusion,
+                        warnings: ['OCR 서버가 불안정해서 비전 분석으로 처리했습니다.', clean(ocrErr.message, 180), ...(visionOnly.warnings || [])].filter(Boolean),
+                        access: { planId: req.kitaAccess.plan.id, planName: req.kitaAccess.plan.name, remainingToday: req.kitaAccess.remaining }
+                    });
+                }
+                throw ocrErr;
+            }
             const ocrText = clean(ocrOnly.normalized_text || ocrOnly.extracted_text || ocrOnly.text, 6000);
             const solved = ocrText ? await solveWithStudyAi({
                 question: ocrText,
-                subject: subject(req),
+                subject: requestedSubject,
                 userId: req.user?.email || 'kita-user',
-                elapsedSeconds: Number(req.body?.solveTime || req.body?.elapsed_seconds || 0)
+                elapsedSeconds
             }) : null;
             bundle = {
                 ocr: ocrOnly,
@@ -172,16 +236,58 @@ router.post('/graph-image', limit('ocr'), upload.single('image'), async (req, re
                 warning: '고급 사진 분석이 잠깐 불안정해서 OCR 후 기본 풀이로 전환했습니다.'
             };
         }
+        const vision = await visionPromise;
         const ocr = bundle.ocr || {};
         const solve = bundle.analyze?.solve || null;
-        const combined = [req.body?.graph_text, ocr.normalized_text || ocr.extracted_text || ocr.text].filter(Boolean).join('\n');
+        const ocrText = clean(ocr.normalized_text || ocr.extracted_text || ocr.text, 6000);
+        const visionText = vision?.ok ? clean(vision.extractedText, 6000) : '';
+        const combined = [req.body?.graph_text, visionText, ocrText].filter(Boolean).join('\n');
         const graph = graphAnalysis(combined), geometry = geometryAnalysis(combined);
         const warnings = [
             fallbackWarning,
+            vision?.ok ? '' : vision?.error ? `비전 분석 보조 실패: ${clean(vision.error, 140)}` : '',
+            ...photoCrossCheckWarnings(ocrText, visionText),
+            ...(vision?.ok ? vision.warnings || [] : []),
             bundle.warning,
             ...(ocr.warnings || []),
             '사진 속 숫자와 기호는 한 번 확인해 주세요.'
         ].filter(Boolean);
+        if (vision?.ok && (vision.verifiedAnswer || vision.basicSolution || vision.fastSolution || visionText)) {
+            const preferredText = visionText || ocrText;
+            const visionConfidence = Number(vision.confidence || 0.75);
+            if (visionConfidence >= 0.45 || !solve) {
+                return res.json({
+                    ok: true,
+                    type: 'photo_vision_solution',
+                    ocr: {
+                        ...ocr,
+                        extracted_text: preferredText || ocr.extracted_text || '',
+                        normalized_text: preferredText || ocr.normalized_text || '',
+                        confidence: Math.max(Number(ocr.confidence || 0), Math.min(1, visionConfidence)),
+                        detected_subject: vision.analysis?.detected_subject || ocr.detected_subject || requestedSubject,
+                        detected_unit: vision.analysis?.detected_unit || ocr.detected_unit || '',
+                        problem_type: vision.analysis?.problem_type || ocr.problem_type || '',
+                        warnings: warnings.slice(0, 8)
+                    },
+                    vision,
+                    analyze: bundle.analyze,
+                    graph,
+                    geometry,
+                    verifiedAnswer: vision.verifiedAnswer || solve?.verified_answer || '',
+                    solution: vision.basicSolution || solve?.basic_solution || '',
+                    shortcut: vision.fastSolution || solve?.fast_solution || '',
+                    basicSolution: vision.basicSolution || solve?.basic_solution || '',
+                    fastSolution: vision.fastSolution || solve?.fast_solution || '',
+                    wrongAnswerReasons: vision.warnings?.length ? vision.warnings : solve?.wrong_answer_reasons || [],
+                    similarProblem: solve?.similar_problem || '',
+                    tutorHint: solve?.tutor_hint || '',
+                    recommendedNextAction: solve?.recommended_next_action || '',
+                    conclusion: vision.verifiedAnswer ? `정답은 ${vision.verifiedAnswer}입니다.` : vision.fastSolution || vision.basicSolution || solve?.fast_solution || graph.conclusion,
+                    warnings,
+                    access: { planId: req.kitaAccess.plan.id, planName: req.kitaAccess.plan.name, remainingToday: req.kitaAccess.remaining }
+                });
+            }
+        }
         if (solve) {
             return res.json({
                 ok: true,

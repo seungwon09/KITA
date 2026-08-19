@@ -233,8 +233,108 @@ async function solveWithExternalAi({ question, subject = 'auto', elapsedSeconds 
     };
 }
 
+async function solvePhotoWithExternalAi({
+    imageBuffer,
+    mimeType = 'image/jpeg',
+    userText = '',
+    subject = 'auto',
+    elapsedSeconds = 0,
+    studentLevel = 'intermediate'
+}) {
+    if (!AI_API_KEY) {
+        const err = new Error('AI_API_KEY is not configured.');
+        err.code = 'AI_API_NOT_CONFIGURED';
+        throw err;
+    }
+    if (!imageBuffer?.length) throw new Error('Image buffer is empty.');
+    if (imageBuffer.length > 6 * 1024 * 1024) throw new Error('Image is too large for vision analysis.');
+
+    const safeSubject = normalizeSubject(subject);
+    const dataUrl = `data:${mimeType || 'image/jpeg'};base64,${Buffer.from(imageBuffer).toString('base64')}`;
+    const schema = {
+        image_kind: 'text_problem|graph|geometry|mixed|unknown',
+        extracted_text: 'image text exactly as read, with corrected math notation',
+        uncertain_parts: ['part that may be misread'],
+        analysis: {
+            subject: 'math|science|mixed|unknown',
+            unit: 'string',
+            problem_type: 'string',
+            visual_features: ['axis labels, points, shape lengths, table values, formulas']
+        },
+        verified_answer: 'exact final answer only',
+        basic_solution: 'short readable Korean solution',
+        fast_solution: 'exam shortcut in Korean',
+        graph_summary: 'if graph exists, describe axes/key points/trend',
+        geometry_summary: 'if geometry exists, describe shape/given lengths/target',
+        warnings: ['only real uncertainty, no generic warning'],
+        confidence: 0.8
+    };
+    const messages = [
+        {
+            role: 'system',
+            content: [
+                'You are KITA vision solver for Korean middle/high-school math and science.',
+                'Read the uploaded image carefully before solving.',
+                'Prioritize exact transcription of numbers, signs, exponents, units, graph axes, marked points, and geometry labels.',
+                'If the image is a graph or geometry problem, analyze the visual information directly, not only visible text.',
+                'Never invent missing labels. If a part is unreadable, put it in uncertain_parts and solve conditionally.',
+                'Use clean Korean. Use math notation like x^2, m/s^2, \\frac{}{} when needed.',
+                'Return only one valid JSON object matching the schema.'
+            ].join(' ')
+        },
+        {
+            role: 'user',
+            content: [
+                {
+                    type: 'text',
+                    text: [
+                        `subject=${safeSubject}`,
+                        `student_level=${clean(studentLevel, 80)}`,
+                        `elapsed_seconds=${Number.isFinite(elapsedSeconds) ? elapsedSeconds : 0}`,
+                        userText ? `student_extra_text=${clean(userText, 2000)}` : 'student_extra_text=',
+                        'Analyze the image and solve/respond.',
+                        'JSON schema:',
+                        JSON.stringify(schema)
+                    ].join('\n')
+                },
+                {
+                    type: 'image_url',
+                    image_url: { url: dataUrl, detail: 'high' }
+                }
+            ]
+        }
+    ];
+
+    const result = await chatCompletion(messages, { maxTokens: 2200, temperature: 0.05, json: true, timeoutMs: Math.max(AI_API_TIMEOUT_MS, 60000) });
+    const parsed = extractJson(result.content);
+    const analysis = parsed.analysis || {};
+    return {
+        ok: true,
+        provider: 'external-vision-api',
+        apiProvider: AI_API_PROVIDER,
+        model: AI_API_MODEL,
+        imageKind: clean(parsed.image_kind || 'unknown', 80),
+        extractedText: clean(parsed.extracted_text || '', 8000),
+        uncertainParts: arrayOfStrings(parsed.uncertain_parts),
+        verifiedAnswer: clean(parsed.verified_answer || '', 1000),
+        basicSolution: clean(parsed.basic_solution || '', 8000),
+        fastSolution: clean(parsed.fast_solution || '', 5000),
+        graphSummary: clean(parsed.graph_summary || '', 4000),
+        geometrySummary: clean(parsed.geometry_summary || '', 4000),
+        warnings: arrayOfStrings(parsed.warnings),
+        confidence: Number(parsed.confidence) || null,
+        analysis: {
+            detected_subject: clean(analysis.subject || safeSubject, 80),
+            detected_unit: clean(analysis.unit || '', 120),
+            problem_type: clean(analysis.problem_type || '', 120),
+            visual_features: arrayOfStrings(analysis.visual_features)
+        }
+    };
+}
+
 module.exports = {
     askExternalAi,
     externalAiStatus,
-    solveWithExternalAi
+    solveWithExternalAi,
+    solvePhotoWithExternalAi
 };
