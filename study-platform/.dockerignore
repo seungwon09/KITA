@@ -1,0 +1,10 @@
+node_modules
+npm-debug.log
+.git
+.vscode
+*.log
+cloudflared*.log
+server-debug*.log
+uploads/*
+data/*.tmp
+.env

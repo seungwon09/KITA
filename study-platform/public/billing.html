@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KITA 업그레이드</title>
+<link rel="stylesheet" href="/kita.css">
+</head>
+<body>
+<header class="topbar"><button class="brand" onclick="location.href='/'">KITA</button><div class="nav-actions"></div></header>
+<main class="shell">
+    <section class="panel">
+        <div class="badge"><span class="dot"></span> 무료 베타 운영 중</div>
+        <h1>필요한 풀이 수준만 선택</h1>
+        <p class="muted">현재는 무료 베타 기간입니다. 유료 요금제는 사업자 등록과 결제 계약이 끝난 뒤 열립니다.</p>
+        <div id="status" class="notice">결제 상태 확인 중...</div>
+        <div id="current" class="success" style="margin-top:12px">현재 요금제 확인 중...</div>
+        <div id="plans" class="grid four"></div>
+    </section>
+</main>
+<script>
+let paymentStatus = { configured: false, devMode: false };
+function esc(value) { return String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'); }
+function authHeaders(json = false) { return { ...(json ? { 'Content-Type': 'application/json' } : {}), ...window.kitaAuthHeaders() }; }
+async function loadPlans() {
+    const [plansData, status, me] = await Promise.all([
+        fetch('/api/payment/plans').then(res => res.json()),
+        fetch('/api/payment/status').then(res => res.json()),
+        fetch('/api/payment/me', { headers: authHeaders() }).then(res => res.json())
+    ]);
+    paymentStatus = status;
+    document.getElementById('status').className = status.configured ? 'success' : 'notice';
+    document.getElementById('status').textContent = status.configured
+        ? '결제 연결이 준비되어 있습니다.'
+        : status.devMode
+            ? '개발모드 결제가 켜져 있습니다. 실제 돈 없이 유료 플랜 흐름을 테스트할 수 있습니다.'
+            : '유료 구독은 준비 중입니다. 현재는 무료 베타를 이용해 주세요.';
+    document.getElementById('current').textContent = `현재 요금제: ${me.plan.name}${me.loggedIn ? '' : ' · 로그인하면 계정에 저장됩니다.'}`;
+    document.getElementById('plans').innerHTML = plansData.plans.map(plan => `
+        <div class="card">
+            <h3>${esc(plan.name)}</h3>
+            <div class="metric"><strong>${esc(plan.label)}</strong></div>
+            <p class="muted">${esc(plan.description)}</p>
+            <ul>${plan.features.map(feature => `<li>${esc(feature)}</li>`).join('')}</ul>
+            <button class="btn ${plan.price === 0 ? 'primary' : 'ghost'} full" ${plan.price > 0 && !status.configured && !status.devMode ? 'disabled' : ''} onclick="checkout('${plan.id}')">${plan.price === 0 ? '무료로 시작' : status.configured ? '업그레이드' : status.devMode ? '개발모드 활성화' : '준비 중'}</button>
+        </div>
+    `).join('');
+}
+async function checkout(planId) {
+    try {
+        const res = await fetch('/api/payment/checkout', { method: 'POST', headers: authHeaders(true), body: JSON.stringify({ planId }) });
+        const data = await res.json();
+        if (res.status === 202 && data.devMode) return devActivate(planId);
+        if (!res.ok) throw new Error(data.error || data.message || '결제를 준비하지 못했습니다.');
+        alert(data.message);
+        loadPlans();
+    } catch (err) {
+        alert(err.message);
+    }
+}
+async function devActivate(planId) {
+    if (!localStorage.getItem('token')) {
+        alert('개발모드 요금제 테스트는 로그인 후 사용할 수 있습니다.');
+        location.href = '/login.html';
+        return;
+    }
+    const res = await fetch('/api/payment/dev-activate', {
+        method: 'POST',
+        headers: authHeaders(true),
+        body: JSON.stringify({ planId })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '개발모드 활성화에 실패했습니다.');
+    alert(`${data.plan.name} 플랜이 개발모드로 활성화되었습니다.`);
+    loadPlans();
+}
+window.addEventListener('DOMContentLoaded', () => loadPlans().catch(err => document.getElementById('status').textContent = err.message));
+</script>
+<script src="/kita-nav.js"></script>
+</body>
+</html>

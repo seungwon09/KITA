@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>KITA 포인트</title><link rel="stylesheet" href="/kita.css"></head>
+<body>
+<header class="topbar"><button class="brand" onclick="location.href='/'">KITA</button><div class="nav-actions"></div></header>
+<main class="shell">
+<section class="hero">
+    <div class="panel"><div class="badge"><span class="dot"></span> 포인트</div><h1>친구 초대와<br>나만의 풀이 공유</h1><div id="me" class="result"></div><div class="toolbar"><button class="btn primary" onclick="checkin()">출석 포인트</button><button class="btn ghost" onclick="copyInvite()">초대 링크 복사</button></div></div>
+    <div class="panel"><h2>풀이 공유</h2><div class="field"><label for="title">제목</label><input id="title" placeholder="예: 내가 쓰는 빠른 풀이"></div><div class="field"><label for="solutionText">풀이</label><textarea id="solutionText" placeholder="나만의 풀이 방법을 적어 주세요."></textarea></div><button class="btn primary" onclick="shareSolution()">공유하기</button></div>
+</section>
+<section class="panel admin-gap"><h2>주간 풀이 랭킹</h2><div id="solutions" class="grid two"></div></section>
+</main>
+<script src="/kita-nav.js"></script>
+<script>
+let inviteLink=''; const esc=value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+async function api(path,options={}){const res=await fetch(path,{...options,headers:{...(options.headers||{}),...window.kitaAuthHeaders()}}),data=await res.json();if(!res.ok)throw new Error(data.error||'요청에 실패했습니다.');return data}
+async function loadMe(){const data=await api('/api/rewards/me');inviteLink=data.inviteLink;document.getElementById('me').innerHTML=`<div class="card metric"><span class="muted">내 포인트</span><strong>${data.user.points||0}P</strong></div><div class="bubble">내 초대 코드: ${esc(data.user.referralCode)}<br>${esc(inviteLink)}</div>`}
+async function loadSolutions(){const data=await api('/api/rewards/solutions');document.getElementById('solutions').innerHTML=(data.solutions||[]).map(item=>`<div class="card"><h3>${esc(item.title)}</h3><p class="muted">${esc(item.authorMasked)} · 좋아요 ${item.likes||0}</p><p>${esc(item.solutionText)}</p><button class="btn ghost" onclick="likeSolution('${item.id}')">좋아요</button></div>`).join('')||'<div class="bubble">아직 공유된 풀이가 없습니다.</div>'}
+async function checkin(){try{await api('/api/rewards/checkin',{method:'POST'});loadMe()}catch(err){alert(err.message)}}
+async function shareSolution(){const title=document.getElementById('title').value.trim(),solutionText=document.getElementById('solutionText').value.trim();if(!title||!solutionText)return alert('제목과 풀이를 입력해 주세요.');await api('/api/rewards/solutions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,solutionText,subject:'math',style:'빠른 풀이'})});document.getElementById('title').value='';document.getElementById('solutionText').value='';loadMe();loadSolutions()}
+async function likeSolution(id){try{await api(`/api/rewards/solutions/${id}/like`,{method:'POST'});loadSolutions()}catch(err){alert(err.message)}}
+function copyInvite(){navigator.clipboard?.writeText(inviteLink);alert('초대 링크를 복사했습니다.')}
+if(!localStorage.getItem('token'))document.getElementById('me').innerHTML='<div class="notice">포인트 기능은 로그인 후 사용할 수 있습니다.</div>';else{loadMe().catch(err=>document.getElementById('me').innerHTML=`<div class="notice">${err.message}</div>`);loadSolutions()}
+</script>
+</body></html>

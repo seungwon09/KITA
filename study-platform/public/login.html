@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KITA 로그인</title>
+<link rel="stylesheet" href="/kita.css">
+</head>
+<body>
+<header class="topbar"><button class="brand" onclick="location.href='/'">KITA</button><div class="nav-actions"></div></header>
+<main class="shell">
+    <section class="hero">
+        <div class="panel">
+            <div class="badge"><span class="dot"></span> 로그인 · 회원가입</div>
+            <h1>학습 기록을<br>내 계정에 저장</h1>
+            <p class="muted">이메일로 바로 시작할 수 있습니다. 카카오 로그인은 개발자 키를 연결하면 함께 사용할 수 있습니다.</p>
+            <div class="notice" id="kakaoNotice">카카오 로그인 상태를 확인하고 있습니다.</div>
+        </div>
+        <div class="panel">
+            <h2 id="formTitle">로그인</h2>
+            <div class="field"><label for="email">이메일</label><input id="email" type="email" placeholder="you@example.com" autocomplete="email"></div>
+            <div class="field"><label for="password">비밀번호</label><input id="password" type="password" placeholder="8자 이상" autocomplete="current-password"></div>
+            <div class="field" id="refBox" hidden><label for="referralCode">친구 초대 코드</label><input id="referralCode" placeholder="선택 입력"></div>
+            <div class="toolbar">
+                <button class="btn primary" id="submitBtn" onclick="submitAuth()">로그인</button>
+                <button class="btn ghost" id="toggleBtn" onclick="toggleMode()">회원가입으로 전환</button>
+                <button class="btn ghost" onclick="location.href='/api/auth/kakao/start'">카카오로 시작</button>
+            </div>
+            <div id="result" class="result"></div>
+        </div>
+    </section>
+</main>
+<script>
+let isRegister = false;
+const qs = name => new URLSearchParams(location.search).get(name);
+function toggleMode() {
+    isRegister = !isRegister;
+    document.getElementById('formTitle').textContent = isRegister ? '회원가입' : '로그인';
+    document.getElementById('submitBtn').textContent = isRegister ? '회원가입' : '로그인';
+    document.getElementById('toggleBtn').textContent = isRegister ? '로그인으로 전환' : '회원가입으로 전환';
+    document.getElementById('refBox').hidden = !isRegister;
+}
+async function submitAuth() {
+    const path = isRegister ? '/api/auth/register' : '/api/auth/login';
+    const result = document.getElementById('result');
+    result.innerHTML = '<div class="bubble">처리 중...</div>';
+    try {
+        const res = await fetch(path, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                email: document.getElementById('email').value.trim(),
+                password: document.getElementById('password').value,
+                referralCode: document.getElementById('referralCode').value.trim() || qs('ref') || ''
+            })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.msg || '처리에 실패했습니다.');
+        localStorage.setItem('token', data.token);
+        result.innerHTML = '<div class="success">완료되었습니다. 홈으로 이동합니다.</div>';
+        setTimeout(() => location.href = '/', 500);
+    } catch (err) {
+        result.innerHTML = `<div class="notice">${err.message}</div>`;
+    }
+}
+async function checkKakao() {
+    const notice = document.getElementById('kakaoNotice');
+    try {
+        const data = await fetch('/api/auth/kakao/status').then(res => res.json());
+        notice.textContent = data.configured ? '카카오 로그인이 연결되어 있습니다.' : '카카오 개발자 키를 연결하기 전까지 이메일 로그인을 사용합니다.';
+    } catch (err) {
+        notice.textContent = '카카오 로그인 상태를 확인하지 못했습니다.';
+    }
+}
+if (qs('ref')) toggleMode();
+if (qs('ref')) document.getElementById('referralCode').value = qs('ref');
+if (qs('kakao') === 'not-configured') document.getElementById('kakaoNotice').textContent = '카카오 개발자 키가 아직 연결되지 않았습니다.';
+checkKakao();
+</script>
+<script src="/kita-nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KITA 관리자</title>
+<link rel="stylesheet" href="/kita.css">
+</head>
+<body>
+<header class="topbar"><button class="brand" onclick="location.href='/'">KITA</button><div class="nav-actions"></div></header>
+<main class="shell">
+    <section class="panel admin-gate" id="gate">
+        <div class="badge"><span class="dot"></span> 관리자 보호</div>
+        <h1>관리자 코드 입력</h1>
+        <p class="muted">자료와 검증 결과는 관리자 인증 후에만 표시됩니다.</p>
+        <div class="field"><label for="pin">관리자 코드</label><input id="pin" type="password" placeholder="관리자 코드"></div>
+        <button class="btn primary" onclick="unlock()">확인</button>
+        <div id="gateMsg" class="result"></div>
+    </section>
+    <section id="adminPanel" hidden>
+        <div class="admin-head"><div><div class="badge"><span class="dot"></span> 정확도 개선 센터</div><h1>KITA 관리자</h1></div><button class="btn ghost" onclick="lockAdmin()">잠금</button></div>
+        <div class="metric-strip" id="metrics"></div>
+        <div class="admin-tabs">
+            <button class="admin-tab active" data-view="library" onclick="showView('library')">문제집·답지</button>
+            <button class="admin-tab" data-view="quality" onclick="showView('quality')">자동 채점</button>
+        </div>
+        <section class="admin-view" id="view-library">
+            <div class="panel">
+                <h2>문제집·답지 자료실</h2>
+                <p class="muted">PDF는 업로드 직후 텍스트를 자동 추출합니다. 스캔 PDF는 OCR 필요 상태로 표시됩니다.</p>
+                <div class="grid two">
+                    <div>
+                        <div class="field"><label>자료 종류</label><select id="materialType"><option value="problem_book">문제집</option><option value="answer_key">답지</option><option value="reference">개념 자료</option></select></div>
+                        <div class="field"><label>제목</label><input id="title" placeholder="예: 고1 수학 문제집"></div>
+                        <div class="field"><label>과목</label><select id="subject"><option value="math">수학</option><option value="science">과학</option><option value="mixed">혼합</option></select></div>
+                        <div class="field"><label>파일</label><input id="file" type="file"></div>
+                        <button class="btn primary" onclick="uploadMaterial()">자료 업로드</button>
+                    </div>
+                    <div class="notice">텍스트 PDF는 자동 검색 가능 상태가 됩니다. 스캔본 PDF와 사진 자료는 다음 OCR 처리 대상으로 분류됩니다.</div>
+                </div>
+            </div>
+            <div class="panel admin-gap"><h2>등록 자료</h2><div id="library" class="stack"></div></div>
+        </section>
+        <section class="admin-view" id="view-quality" hidden>
+            <div class="panel">
+                <h2>검증 데이터 가져오기</h2>
+                <p class="muted">답지가 정리된 파일을 올리면 AI 대량 채점 목록으로 등록합니다.</p>
+                <div class="grid two">
+                    <div>
+                        <div class="field"><label for="benchmarkSubject">과목</label><select id="benchmarkSubject"><option value="math">수학</option><option value="science">과학</option><option value="mixed">혼합</option></select></div>
+                        <div class="field"><label for="benchmarkUnit">단원</label><input id="benchmarkUnit" placeholder="예: 이차함수 또는 물리/힘"></div>
+                        <div class="field"><label for="benchmarkFile">검증 파일</label><input id="benchmarkFile" type="file" accept=".csv,.json,.txt"></div>
+                        <button class="btn primary" onclick="importBenchmark()">검증 파일 등록</button>
+                    </div>
+                    <div class="notice">
+                        <strong>TXT 예시</strong><br>
+                        문제 | 정답 | 과목 | 단원<br><br>
+                        <strong>CSV 열 이름</strong><br>
+                        question, expectedAnswer, subject, unit<br><br>
+                        JSON은 같은 열 이름을 가진 배열을 사용합니다.
+                    </div>
+                </div>
+                <div id="importResult" class="result"></div>
+            </div>
+            <div class="panel admin-gap">
+                <div class="section-head"><div><h2>정답 자동 검증</h2><p class="muted">검증 문제를 실행하여 틀린 풀이를 개선 목록에 모읍니다.</p></div><div class="toolbar"><button class="btn ghost" onclick="seedCases()">기본 문제 추가</button><button class="btn primary" onclick="runBenchmark()">자동 채점 실행</button></div></div>
+                <div id="runResult" class="result"></div>
+            </div>
+            <div class="panel admin-gap"><h2>개선 대기 목록</h2><div id="failureList" class="stack"></div></div>
+        </section>
+    </section>
+</main>
+<script src="/kita-nav.js"></script>
+<script>
+let adminPin = sessionStorage.getItem('adminPin') || '';
+const esc = value => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+const headers = json => ({ ...(json ? { 'Content-Type': 'application/json' } : {}), 'x-admin-pin': adminPin });
+function showView(name) {
+    document.querySelectorAll('.admin-view').forEach(view => view.hidden = view.id !== `view-${name}`);
+    document.querySelectorAll('.admin-tab').forEach(button => button.classList.toggle('active', button.dataset.view === name));
+}
+function lockAdmin() { sessionStorage.removeItem('adminPin'); location.reload(); }
+async function unlock() {
+    adminPin = document.getElementById('pin').value.trim();
+    const res = await fetch('/api/admin/status', { headers: headers(false) });
+    const data = await res.json();
+    if (!res.ok) return document.getElementById('gateMsg').innerHTML = `<div class="notice">${esc(data.error)}</div>`;
+    sessionStorage.setItem('adminPin', adminPin);
+    document.getElementById('gate').hidden = true;
+    document.getElementById('adminPanel').hidden = false;
+    await Promise.all([loadDashboard(), loadLibrary()]);
+}
+function renderMetrics(value) {
+    const cards = [['검증 문제', value.benchmarkCases || 0], ['최근 정확도', value.latestAccuracy == null ? '-' : `${value.latestAccuracy}%`], ['개선 대기', value.openFailures || 0], ['등록 자료', value.materials || 0]];
+    document.getElementById('metrics').innerHTML = cards.map(([label, number]) => `<div class="metric-box"><span>${label}</span><strong>${number}</strong></div>`).join('');
+}
+async function loadDashboard() {
+    const data = await fetch('/api/admin/dashboard', { headers: headers(false) }).then(res => res.json());
+    renderMetrics(data.metrics || {});
+    document.getElementById('failureList').innerHTML = (data.recentFailures || []).map(item => `<article class="list-item"><div><span class="pill bad">${esc(item.category)}</span><h3>${esc(item.question)}</h3><p class="muted">정답: ${esc(item.expectedAnswer)} · AI: ${esc(item.actualAnswer || '없음')}</p></div><button class="btn ghost" onclick="resolveFailure('${item.id}')">처리 완료</button></article>`).join('') || '<div class="empty-state">현재 개선 대기 문제가 없습니다.</div>';
+}
+async function loadLibrary() {
+    const data = await fetch('/api/admin/library', { headers: headers(false) }).then(res => res.json());
+    document.getElementById('library').innerHTML = (data.materials || []).map(item => `<article class="list-item"><div><span class="pill">${esc(item.type)}</span><h3>${esc(item.title)}</h3><p class="muted">${esc(item.originalName)} · ${esc(item.parseStatus)} · ${item.pages || 0}쪽 · ${item.indexedCharacters || 0}자</p><p class="muted">${esc(item.parseNote || '')}</p></div><div class="toolbar"><button class="btn ghost" onclick="reparse('${item.id}')">다시 분석</button><button class="btn ghost" onclick="removeMaterial('${item.id}')">삭제</button></div></article>`).join('') || '<div class="empty-state">등록된 자료가 없습니다.</div>';
+}
+async function uploadMaterial() {
+    const file = document.getElementById('file').files[0];
+    if (!file) return alert('파일을 선택해 주세요.');
+    const form = new FormData();
+    form.append('file', file); form.append('type', document.getElementById('materialType').value); form.append('title', document.getElementById('title').value || file.name); form.append('subject', document.getElementById('subject').value);
+    const res = await fetch('/api/admin/materials', { method: 'POST', headers: headers(false), body: form });
+    const data = await res.json();
+    if (!res.ok) return alert(data.error || '업로드 실패');
+    alert(`업로드 완료: ${data.material.parseStatus}`);
+    Promise.all([loadDashboard(), loadLibrary()]);
+}
+async function importBenchmark() {
+    const file = document.getElementById('benchmarkFile').files[0];
+    if (!file) return alert('검증 파일을 선택해 주세요.');
+    const form = new FormData();
+    form.append('file', file);
+    form.append('subject', document.getElementById('benchmarkSubject').value);
+    form.append('unit', document.getElementById('benchmarkUnit').value.trim());
+    form.append('title', file.name);
+    const result = document.getElementById('importResult');
+    result.innerHTML = '<div class="notice">검증 파일을 분석하고 있습니다...</div>';
+    const res = await fetch('/api/admin/benchmark/import', { method: 'POST', headers: headers(false), body: form });
+    const data = await res.json();
+    result.innerHTML = res.ok
+        ? `<div class="success">${data.imported}개 문제를 등록했습니다.${data.skipped ? ` ${data.skipped}개 행은 건너뛰었습니다.` : ''}</div>`
+        : `<div class="notice">${esc(data.error || '검증 파일 등록에 실패했습니다.')}</div>`;
+    if (res.ok) {
+        document.getElementById('benchmarkFile').value = '';
+        loadDashboard();
+    }
+}
+async function reparse(id) { await fetch(`/api/admin/materials/${id}/reparse`, { method: 'POST', headers: headers(true), body: '{}' }); loadLibrary(); }
+async function removeMaterial(id) { if (confirm('자료를 삭제할까요?')) { await fetch(`/api/admin/materials/${id}`, { method: 'DELETE', headers: headers(false) }); Promise.all([loadDashboard(), loadLibrary()]); } }
+async function seedCases() { const data = await fetch('/api/admin/benchmark/seed', { method: 'POST', headers: headers(true), body: '{}' }).then(res => res.json()); alert(data.message); loadDashboard(); }
+async function runBenchmark() {
+    document.getElementById('runResult').innerHTML = '<div class="notice">자동 채점 중...</div>';
+    const data = await fetch('/api/admin/benchmark/run', { method: 'POST', headers: headers(true), body: JSON.stringify({ limit: 100 }) }).then(res => res.json());
+    document.getElementById('runResult').innerHTML = data.ok ? `<div class="success">${data.run.passed}/${data.run.total} 정답 · 정확도 ${data.run.accuracy}%</div>` : `<div class="notice">${esc(data.error)}</div>`;
+    loadDashboard();
+}
+async function resolveFailure(id) { await fetch(`/api/admin/failures/${id}`, { method: 'PATCH', headers: headers(true), body: JSON.stringify({ status: 'resolved' }) }); loadDashboard(); }
+if (adminPin) { document.getElementById('pin').value = adminPin; unlock(); }
+</script>
+</body>
+</html>

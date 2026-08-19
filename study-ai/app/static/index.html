@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Study AI</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <h1>Study AI</h1>
+            <p>수학과 과학 문제를 풀이, 검산, 빠른 풀이로 분리합니다.</p>
+          </div>
+          <div class="status" id="status">로컬 모델</div>
+        </header>
+
+        <section class="input-grid">
+          <div class="panel input-panel">
+            <div class="panel-head">
+              <h2>문제 입력</h2>
+              <div class="segmented" role="tablist" aria-label="과목">
+                <button class="segment active" data-subject="math" type="button">수학</button>
+                <button class="segment" data-subject="science" type="button">과학</button>
+              </div>
+            </div>
+
+            <textarea id="problemText" spellcheck="false">이차함수 y=x^2-4x+1의 최솟값을 구하시오</textarea>
+
+            <textarea id="userSolution" class="small-textarea" spellcheck="false" placeholder="학생 풀이를 붙여 넣으면 평가와 실수 감지를 같이 합니다."></textarea>
+
+            <div class="upload-row">
+              <label class="file-picker">
+                사진 선택
+                <input id="imageInput" type="file" accept="image/*" />
+              </label>
+              <button id="ocrBtn" type="button">사진에서 읽기</button>
+              <label class="check-control">
+                <input id="autoSolveAfterOcr" type="checkbox" />
+                OCR 후 바로 풀이
+              </label>
+              <span id="ocrStatus" class="meta">OCR 대기</span>
+            </div>
+            <div id="ocrWarning" class="notice" hidden></div>
+            <img id="previewImage" class="preview" alt="업로드한 문제 사진 미리보기" hidden />
+
+            <div class="form-row">
+              <label>
+                학생 ID
+                <input id="userId" value="student-1" />
+              </label>
+              <label>
+                풀이 시간
+                <input id="elapsedSeconds" type="number" min="0" value="90" />
+              </label>
+              <label>
+                풀이 결과
+                <select id="wasCorrect">
+                  <option value="true">맞음</option>
+                  <option value="false">틀림</option>
+                </select>
+              </label>
+              <label>
+                요금제
+                <select id="planTier">
+                  <option value="free">free</option>
+                  <option value="basic">basic</option>
+                  <option value="pro" selected>pro</option>
+                  <option value="premium">premium</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="exam-strip">
+              <div>
+                <span>실전 타이머</span>
+                <strong id="timerDisplay">00:00</strong>
+              </div>
+              <label>
+                제한 시간
+                <input id="timeLimitSeconds" type="number" min="10" value="90" />
+              </label>
+              <button id="startTimerBtn" type="button">시작</button>
+              <button id="stopTimerBtn" type="button">정지</button>
+              <button id="resetTimerBtn" type="button">초기화</button>
+            </div>
+            <div id="examNotice" class="notice" hidden></div>
+
+            <div class="actions">
+              <button id="solveBtn" class="primary" type="button">풀이 실행</button>
+              <button id="autoSubjectBtn" type="button">과목 자동</button>
+              <button id="fastOnlyBtn" type="button">빠른 풀이만</button>
+              <button id="copyResultBtn" type="button">결과 복사</button>
+              <button id="insightBtn" type="button">약점 분석</button>
+              <button id="historyBtn" type="button">최근 기록</button>
+              <button id="wrongBtn" type="button">오답만</button>
+              <button id="slowBtn" type="button">느린 문제</button>
+              <button id="reviewBtn" type="button">복습 묶음</button>
+              <button id="progressBtn" type="button">성장 추적</button>
+              <button id="recommendBtn" type="button">학습 추천</button>
+              <button id="conceptBtn" type="button">개념 압축</button>
+              <button id="formulaBtn" type="button">공식 노트</button>
+              <button id="routeBtn" type="button">학습 루트</button>
+              <button id="generateBtn" type="button">문제 생성</button>
+              <button id="adaptiveBtn" type="button">난이도 자동</button>
+              <button id="expectedBtn" type="button">예상 문제</button>
+              <button id="targetedBtn" type="button">약점 맞춤 문제</button>
+              <button id="appAiBtn" type="button">앱용 통합 분석</button>
+              <button id="mobileConfigBtn" type="button">모바일 설정</button>
+              <button id="mobileBundleBtn" type="button">모바일 앱 번들</button>
+              <button id="mobileOcrBtn" type="button">사진 앱 분석</button>
+              <button id="appHomeBtn" type="button">앱 홈 데이터</button>
+              <button id="styleBtn" type="button">학습 스타일</button>
+              <button id="mentalBtn" type="button">멘탈 분석</button>
+              <button id="speedBtn" type="button">속도 최적화</button>
+              <button id="sessionBtn" type="button">앱 세션</button>
+              <button id="plansBtn" type="button">요금제 표</button>
+              <button id="gateBtn" type="button">기능 잠금</button>
+              <button id="studySessionBtn" type="button">오늘 세션</button>
+              <button id="reviewScheduleBtn" type="button">복습 일정</button>
+              <button id="adminBtn" type="button">관리자 점검</button>
+              <button id="productionStatusBtn" type="button">완성 상태</button>
+              <button id="featureRegistryBtn" type="button">기능 레지스트리</button>
+              <button id="profileBtn" type="button">프로필 저장</button>
+              <button id="bookmarkBtn" type="button">북마크</button>
+              <button id="reportBtn" type="button">학생 리포트</button>
+              <button id="achievementBtn" type="button">성취 배지</button>
+              <button id="leaderboardBtn" type="button">랭킹</button>
+              <button id="notificationBtn" type="button">알림 계획</button>
+              <button id="masteryBtn" type="button">단원 숙련도</button>
+              <button id="personalizationBtn" type="button">개인화 대시보드</button>
+              <button id="trainingQueueBtn" type="button">맞춤 훈련큐</button>
+              <button id="weaknessDiveBtn" type="button">약점 심층</button>
+              <button id="diagnosticBtn" type="button">진단 테스트</button>
+              <button id="variantsBtn" type="button">풀이 4종</button>
+              <button id="hintBtn" type="button">단계 힌트</button>
+              <button id="errorTaxonomyBtn" type="button">오류 분류</button>
+              <button id="weeklyPlanBtn" type="button">7일 계획</button>
+              <button id="answerCheckBtn" type="button">답안 채점</button>
+              <button id="mockExamBtn" type="button">모의고사</button>
+              <button id="mockSubmitBtn" type="button">모의 제출</button>
+              <button id="flashcardBtn" type="button">플래시카드</button>
+              <button id="mistakeNotebookBtn" type="button">고급 오답노트</button>
+            </div>
+          </div>
+
+          <aside class="panel examples">
+            <h2>예시</h2>
+            <button type="button" data-example="이차함수 y=x^2-4x+1의 최솟값을 구하시오" data-subject="math">
+              이차함수 최솟값
+            </button>
+            <button type="button" data-example="x^2-5x+6=0을 푸시오" data-subject="math">
+              이차방정식
+            </button>
+            <button type="button" data-example="질량 2kg인 물체의 가속도가 3m/s^2일 때 힘을 구하시오" data-subject="science">
+              힘 F=ma
+            </button>
+            <button type="button" data-example="전압 12V, 전류 2A일 때 전력을 구하시오" data-subject="science">
+              전력 P=VI
+            </button>
+            <button type="button" data-example="몰수 3mol, 몰 질량 20g/mol인 물질의 질량을 구하시오" data-subject="science">
+              화학 질량
+            </button>
+          </aside>
+        </section>
+
+        <section class="result-grid">
+          <article class="panel result-card">
+            <div class="panel-head">
+              <h2>검산 답</h2>
+              <span id="difficulty" class="pill">대기</span>
+            </div>
+            <div id="verifiedAnswer" class="answer">아직 풀이 전입니다.</div>
+            <div id="analysis" class="meta"></div>
+          </article>
+
+          <article class="panel result-card">
+            <h2>빠른 풀이</h2>
+            <pre id="fastSolution">문제를 입력하고 풀이 실행을 누르세요.</pre>
+          </article>
+
+          <article class="panel result-card wide">
+            <h2>기본 풀이</h2>
+            <pre id="basicSolution">단계별 풀이가 여기에 표시됩니다.</pre>
+          </article>
+
+          <article class="panel result-card">
+            <h2>비슷한 문제</h2>
+            <pre id="similarProblem">비슷한 문제가 여기에 표시됩니다.</pre>
+          </article>
+
+          <article class="panel result-card">
+            <h2>약점 분석</h2>
+            <pre id="insight">풀이 기록이 쌓이면 약점을 보여줍니다.</pre>
+          </article>
+
+          <article class="panel result-card wide">
+            <h2>최근 기록</h2>
+            <div id="history" class="history-list">최근 풀이 기록이 여기에 표시됩니다.</div>
+          </article>
+
+          <article class="panel result-card wide">
+            <h2>오답노트 / 복습</h2>
+            <div id="review" class="review-board">오답, 느린 문제, 오늘 복습, 재출제가 여기에 표시됩니다.</div>
+          </article>
+
+          <article class="panel result-card wide">
+            <h2>시험 전략</h2>
+            <div id="examStrategy" class="strategy-board">타이머를 켜고 문제를 풀면 시간 전략이 표시됩니다.</div>
+          </article>
+
+          <article class="panel result-card wide">
+            <h2>성장 추적</h2>
+            <div class="metric-grid">
+              <div class="metric">
+                <span>풀이 수</span>
+                <strong id="metricTotal">-</strong>
+              </div>
+              <div class="metric">
+                <span>정답률</span>
+                <strong id="metricAccuracy">-</strong>
+              </div>
+              <div class="metric">
+                <span>평균 시간</span>
+                <strong id="metricAvgTime">-</strong>
+              </div>
+              <div class="metric">
+                <span>최근 평균</span>
+                <strong id="metricRecentTime">-</strong>
+              </div>
+            </div>
+            <pre id="progress">성장 추적 결과가 여기에 표시됩니다.</pre>
+          </article>
+
+          <article class="panel result-card wide">
+            <h2>학습 추천</h2>
+            <div id="recommendation" class="recommendation">오늘의 추천이 여기에 표시됩니다.</div>
+          </article>
+
+          <article class="panel result-card wide">
+            <h2>개념 / 공식 / 루트</h2>
+            <div id="studyGuide" class="recommendation">개념 압축, 공식 노트, 학습 루트가 여기에 표시됩니다.</div>
+          </article>
+
+          <article class="panel result-card wide">
+            <h2>문제 생성 / 예상 문제</h2>
+            <div id="practiceSet" class="recommendation">AI가 만든 연습 문제가 여기에 표시됩니다.</div>
+          </article>
+
+          <article class="panel result-card wide">
+            <h2>앱 연결 API 결과</h2>
+            <div id="appAiResult" class="recommendation">네 앱에서 받을 통합 응답이 여기에 표시됩니다.</div>
+          </article>
+
+          <article class="panel result-card wide">
+            <h2>앱 홈 / 학생 진단</h2>
+            <div id="appProfile" class="recommendation">앱 홈, 학습 스타일, 멘탈, 속도 진단이 여기에 표시됩니다.</div>
+          </article>
+        </section>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

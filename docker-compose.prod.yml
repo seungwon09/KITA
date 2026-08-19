@@ -1,0 +1,92 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: kita-caddy
+    restart: unless-stopped
+    environment:
+      KITA_DOMAIN: ${KITA_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - kita-web
+
+  kita-web:
+    build:
+      context: ./study-platform
+    container_name: kita-web
+    restart: unless-stopped
+    env_file:
+      - ${KITA_ENV_FILE:-.env.production}
+    environment:
+      NODE_ENV: production
+      TRUST_PROXY: "true"
+      STRICT_PRODUCTION_SECURITY: "true"
+      ALLOW_DEV_PAYMENTS: "false"
+      ENFORCE_HTTPS: "true"
+      PORT: 3000
+      STUDY_AI_BASE_URL: http://kita-ai:8002
+      LOCAL_LLM_URL: http://ollama:11434/api/generate
+      MONGO_URI: mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/kita?authSource=admin
+    expose:
+      - "3000"
+    volumes:
+      - kita_web_data:/app/data
+      - kita_uploads:/app/uploads
+    depends_on:
+      - kita-ai
+      - mongo
+      - ollama
+
+  kita-ai:
+    build:
+      context: ./study-ai
+    container_name: kita-ai
+    restart: unless-stopped
+    environment:
+      USE_MOCK_LLM: "false"
+      LOCAL_LLM_URL: http://ollama:11434/api/generate
+      LOCAL_LLM_MODEL: ${LOCAL_LLM_MODEL:-qwen2.5:3b}
+      CORS_ORIGINS: https://${KITA_DOMAIN}
+      STUDY_AI_DB_PATH: /data/study_ai.sqlite3
+    expose:
+      - "8002"
+    volumes:
+      - kita_ai_db:/data
+    depends_on:
+      - ollama
+
+  mongo:
+    image: mongo:7
+    container_name: kita-mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+    expose:
+      - "27017"
+    volumes:
+      - mongo_data:/data/db
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: kita-ollama
+    restart: unless-stopped
+    expose:
+      - "11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+volumes:
+  caddy_data:
+  caddy_config:
+  kita_web_data:
+  kita_uploads:
+  kita_ai_db:
+  mongo_data:
+  ollama_data:

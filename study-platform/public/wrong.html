@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>KITA 오답노트</title><link rel="stylesheet" href="/kita.css"></head>
+<body>
+<header class="topbar"><button class="brand" onclick="location.href='/'">KITA</button><div class="nav-actions"></div></header>
+<main class="shell"><section class="panel"><div class="badge"><span class="dot"></span> 약점 관리</div><h1>오답노트</h1><div id="list" class="result"></div></section></main>
+<script src="/kita-nav.js"></script>
+<script>
+const esc=value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+async function loadWrong(){
+ if(!localStorage.getItem('token')) return document.getElementById('list').innerHTML='<div class="notice">로그인하면 오답 기록이 저장됩니다.</div>';
+ const res=await fetch('/api/question/wrong',{headers:window.kitaAuthHeaders()}),data=await res.json(); if(!res.ok) throw new Error(data.msg||'오답을 불러오지 못했습니다.');
+ document.getElementById('list').innerHTML=data.length?data.map(item=>`<div class="card"><h3>${esc(item.questionId)}</h3><p class="muted">내 답: ${esc(item.userAnswer)} · 풀이 시간: ${esc(item.solveTime||0)}초</p><button class="btn ghost" onclick="location.href='/ai.html'">AI로 다시 풀기</button></div>`).join(''):'<div class="success">아직 저장된 오답이 없습니다.</div>';
+}
+loadWrong().catch(err=>document.getElementById('list').innerHTML=`<div class="notice">${err.message}</div>`);
+</script>
+</body></html>

@@ -1,0 +1,3 @@
+question,expectedAnswer,subject,unit
+"이차함수 y=x^2-4x+1의 최솟값을 구하시오.","-3","math","이차함수"
+"질량 2kg, 가속도 3m/s^2일 때 힘을 구하시오.","6N","science","물리/힘"

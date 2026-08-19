@@ -1,0 +1,41 @@
+# Secrets
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# Dependencies
+node_modules/
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# Runtime data
+*.log
+*.sqlite3
+*.db
+study-platform/data/*.json
+study-platform/data/*.jsonl
+study-platform/uploads/*
+!study-platform/uploads/.gitkeep
+backups/
+
+# Local deployment state
+PUBLIC_LINK_TODAY.txt
+cloudflared*.log
+server*.log
+*.out.log
+*.err.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+*.code-workspace
+

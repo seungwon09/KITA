@@ -1,0 +1,6 @@
+$ErrorActionPreference = "Stop"
+Set-Location "C:\Users\user\Documents\Codex\2026-05-20\transformer-pretraining-fine-tuning-rlhf-hallucination"
+$env:USE_MOCK_LLM = "false"
+$env:LOCAL_LLM_MODEL = "qwen2.5:3b"
+$env:PYTHONIOENCODING = "utf-8"
+& "C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" -c "from fastapi.testclient import TestClient; from app.main import app; c=TestClient(app); r=c.post('/solve', json={'user_id':'student-real','problem_text':'이차함수 y=x^2-4x+1의 최솟값을 구하시오','subject':'math','student_level':'intermediate','mode':'compare','elapsed_seconds':90,'was_correct':True}); print(r.status_code); print(r.json()['basic_solution'][:500]); print('---FAST---'); print(r.json()['fast_solution'][:500])"

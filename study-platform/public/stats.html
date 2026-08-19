@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>KITA 학습 통계</title><link rel="stylesheet" href="/kita.css"></head>
+<body>
+<header class="topbar"><button class="brand" onclick="location.href='/'">KITA</button><div class="nav-actions"></div></header>
+<main class="shell"><section class="panel"><div class="badge"><span class="dot"></span> 성장 추적</div><h1>학습 통계</h1><div id="stats" class="grid four"></div><div id="message" class="result"></div></section></main>
+<script src="/kita-nav.js"></script>
+<script>
+const metric = (label, value) => `<div class="card metric"><span class="muted">${label}</span><strong>${value}</strong></div>`;
+async function loadStats() {
+    if (!localStorage.getItem('token')) { document.getElementById('stats').innerHTML = metric('풀이 수','-')+metric('정답률','-')+metric('평균 시간','-')+metric('최단 시간','-'); return document.getElementById('message').innerHTML='<div class="notice">로그인하면 실제 학습 기록이 연결됩니다.</div>'; }
+    const res=await fetch('/api/question/stats',{headers:window.kitaAuthHeaders()}), data=await res.json(); if(!res.ok) throw new Error(data.msg||'통계를 불러오지 못했습니다.');
+    document.getElementById('stats').innerHTML=metric('풀이 수',data.total||0)+metric('정답률',`${Math.round(data.accuracy||0)}%`)+metric('평균 시간',`${Math.round(data.averageTime||0)}초`)+metric('최단 시간',data.fastestTime?`${data.fastestTime}초`:'-');
+    document.getElementById('message').innerHTML='<div class="bubble">문제를 더 풀수록 약점 유형과 성장 흐름을 더 정확하게 보여 줍니다.</div>';
+}
+loadStats().catch(err=>document.getElementById('message').innerHTML=`<div class="notice">${err.message}</div>`);
+</script>
+</body></html>
